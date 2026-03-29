@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Register Gym</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <main class="container auth-wrap">
+    <div class="logo auth-logo">Retain<span>r</span></div>
+    <h1>Create Gym Account</h1>
+    <p class="page-subtitle">Register your gym and get a private dashboard + check-in link.</p>
+
+    <div id="register-alert" class="alert error" style="display:none;"></div>
+
+    <section class="card form-card">
+      <form id="register-form">
+        <div class="form-grid">
+          <div>
+            <label for="gym_name">Gym Name</label>
+            <input id="gym_name" required>
+          </div>
+          <div>
+            <label for="owner_name">Owner Name (optional)</label>
+            <input id="owner_name">
+          </div>
+          <div>
+            <label for="email">Email</label>
+            <input id="email" type="email" autocomplete="username" required>
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" autocomplete="new-password" minlength="6" required>
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px;">
+          <button id="register-btn" type="submit">Create Account</button>
+          <a class="btn btn-secondary" href="/login">Already Registered? Login</a>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/register.js"></script>
+</body>
+</html>

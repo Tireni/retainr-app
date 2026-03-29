@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Gym Login</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <main class="container auth-wrap">
+    <div class="logo auth-logo">Retain<span>r</span></div>
+    <h1>Gym Login</h1>
+    <p class="page-subtitle">Sign in to your gym dashboard.</p>
+
+    <div id="login-alert" class="alert error" style="display:none;"></div>
+
+    <section class="card form-card">
+      <form id="login-form">
+        <div class="form-grid">
+          <div>
+            <label for="email">Email</label>
+            <input id="email" type="email" autocomplete="username" required>
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input id="password" type="password" autocomplete="current-password" required>
+          </div>
+        </div>
+        <div class="row" style="margin-top:14px;">
+          <button id="login-btn" type="submit">Login</button>
+          <a class="btn btn-secondary" href="/register">Create Gym Account</a>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>
