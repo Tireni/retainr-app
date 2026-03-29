@@ -3,7 +3,6 @@ const statsEls = {
   active: document.getElementById("stat-active"),
   risk: document.getElementById("stat-risk"),
   lost: document.getElementById("stat-lost"),
-  revenue: document.getElementById("stat-revenue"),
   checkins: document.getElementById("stat-checkins"),
 };
 
@@ -103,7 +102,6 @@ function renderStats(stats) {
   statsEls.active.textContent = stats.active_members || 0;
   statsEls.risk.textContent = stats.at_risk_members || 0;
   statsEls.lost.textContent = stats.lost_members || 0;
-  statsEls.revenue.textContent = Retainr.money(stats.revenue_at_risk || 0);
   statsEls.checkins.textContent = stats.today_checkins || 0;
 }
 
