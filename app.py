@@ -4,6 +4,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -14,9 +15,7 @@ from urllib.parse import quote_plus
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo
 
-import mysql.connector
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory, session
-from mysql.connector.cursor import MySQLCursorDict
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -31,14 +30,11 @@ DEFAULT_PROMO_TEMPLATE = "Hi {name}, we have a promo running this week. Come in 
 
 @dataclass(frozen=True)
 class DbConfig:
-    host: str = os.getenv("DB_HOST", "127.0.0.1")
-    port: int = int(os.getenv("DB_PORT", "3306"))
-    user: str = os.getenv("DB_USER", "root")
-    password: str = os.getenv("DB_PASSWORD", "")
-    database: str = os.getenv("DB_NAME", "retainr")
+    path: str = os.getenv("DB_PATH", os.path.join(BASE_DIR, "retainr.sqlite3"))
 
 
 DB = DbConfig()
+sqlite3.register_adapter(Decimal, lambda d: float(d))
 
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
 app.secret_key = os.getenv("SECRET_KEY", "retainr-dev-secret-change-me")
@@ -57,16 +53,19 @@ def lagos_today() -> date:
 
 
 @contextmanager
-def db_connection(include_database: bool = True) -> Generator[mysql.connector.MySQLConnection, None, None]:
-    kwargs: dict[str, Any] = {
-        "host": DB.host,
-        "port": DB.port,
-        "user": DB.user,
-        "password": DB.password,
-    }
-    if include_database:
-        kwargs["database"] = DB.database
-    conn = mysql.connector.connect(**kwargs)
+def db_connection(include_database: bool = True) -> Generator[sqlite3.Connection, None, None]:
+    del include_database
+    db_path = DB.path if os.path.isabs(DB.path) else os.path.join(BASE_DIR, DB.path)
+    if db_path != ":memory:":
+        dirpath = os.path.dirname(db_path)
+        if dirpath:
+            os.makedirs(dirpath, exist_ok=True)
+    conn = sqlite3.connect(
+        db_path,
+        detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
     finally:
@@ -74,21 +73,56 @@ def db_connection(include_database: bool = True) -> Generator[mysql.connector.My
 
 
 @contextmanager
-def db_cursor(conn: mysql.connector.MySQLConnection) -> Generator[MySQLCursorDict, None, None]:
-    cursor = conn.cursor(dictionary=True)
+def db_cursor(conn: sqlite3.Connection) -> Generator["DictCursor", None, None]:
+    cursor = DictCursor(conn.cursor())
     try:
         yield cursor
     finally:
         cursor.close()
 
 
-def safe_exec(cursor: MySQLCursorDict, sql: str, params: tuple[Any, ...] | None = None) -> None:
+class DictCursor:
+    def __init__(self, cursor: sqlite3.Cursor) -> None:
+        self._cursor = cursor
+
+    @staticmethod
+    def _adapt_sql(sql: str) -> str:
+        return sql.replace("%s", "?")
+
+    def execute(self, sql: str, params: tuple[Any, ...] | list[Any] | None = None) -> "DictCursor":
+        sql_adapted = self._adapt_sql(sql)
+        if params is None:
+            self._cursor.execute(sql_adapted)
+        else:
+            self._cursor.execute(sql_adapted, params)
+        return self
+
+    def fetchone(self) -> dict[str, Any] | None:
+        row = self._cursor.fetchone()
+        return dict(row) if row is not None else None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return [dict(row) for row in self._cursor.fetchall()]
+
+    @property
+    def lastrowid(self) -> int:
+        return int(self._cursor.lastrowid or 0)
+
+    @property
+    def rowcount(self) -> int:
+        return int(self._cursor.rowcount)
+
+    def close(self) -> None:
+        self._cursor.close()
+
+
+def safe_exec(cursor: DictCursor, sql: str, params: tuple[Any, ...] | None = None) -> None:
     try:
         if params is None:
             cursor.execute(sql)
         else:
             cursor.execute(sql, params)
-    except mysql.connector.Error:
+    except sqlite3.Error:
         pass
 
 
@@ -127,6 +161,26 @@ def parse_date(value: Any) -> date | None:
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError:
         return None
+
+
+def to_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        return parse_date(value)
+    return None
+
+
+def to_iso(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def first_name(name: str) -> str:
@@ -186,97 +240,96 @@ def gym_socials(gym_row: dict[str, Any]) -> dict[str, str | None]:
 
 
 def init_database() -> None:
-    with db_connection(include_database=False) as conn:
-        with db_cursor(conn) as cursor:
-            cursor.execute(
-                f"CREATE DATABASE IF NOT EXISTS `{DB.database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            )
-        conn.commit()
+    def has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(str(r["name"]) == column for r in rows)
 
     with db_connection() as conn:
         with db_cursor(conn) as cursor:
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS gyms (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    gym_name VARCHAR(180) NOT NULL,
-                    owner_name VARCHAR(160) DEFAULT NULL,
-                    email VARCHAR(180) NOT NULL UNIQUE,
-                    password_hash VARCHAR(255) NOT NULL,
-                    checkin_token VARCHAR(80) NOT NULL UNIQUE,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gym_name TEXT NOT NULL,
+                    owner_name TEXT DEFAULT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    checkin_token TEXT NOT NULL UNIQUE,
                     at_risk_message TEXT DEFAULT NULL,
                     lost_message TEXT DEFAULT NULL,
                     promo_message TEXT DEFAULT NULL,
-                    instagram_url VARCHAR(255) DEFAULT NULL,
-                    facebook_url VARCHAR(255) DEFAULT NULL,
-                    tiktok_url VARCHAR(255) DEFAULT NULL,
-                    x_url VARCHAR(255) DEFAULT NULL,
-                    website_url VARCHAR(255) DEFAULT NULL,
+                    instagram_url TEXT DEFAULT NULL,
+                    facebook_url TEXT DEFAULT NULL,
+                    tiktok_url TEXT DEFAULT NULL,
+                    x_url TEXT DEFAULT NULL,
+                    website_url TEXT DEFAULT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
                 """
             )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS members (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    gym_id INT NULL,
-                    name VARCHAR(120) NOT NULL,
-                    phone VARCHAR(30) NOT NULL,
-                    phone_normalized VARCHAR(20) DEFAULT NULL,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gym_id INTEGER,
+                    name TEXT NOT NULL,
+                    phone TEXT NOT NULL,
+                    phone_normalized TEXT DEFAULT NULL,
                     last_visit DATE DEFAULT NULL,
                     expiry_date DATE NOT NULL,
-                    monthly_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-                    goal VARCHAR(255) DEFAULT NULL,
-                    purpose VARCHAR(255) DEFAULT NULL,
-                    preferred_time VARCHAR(50) DEFAULT NULL,
+                    monthly_fee REAL NOT NULL DEFAULT 0.00,
+                    goal TEXT DEFAULT NULL,
+                    purpose TEXT DEFAULT NULL,
+                    preferred_time TEXT DEFAULT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    KEY idx_members_gym (gym_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE
+                )
                 """
             )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS member_checkins (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    gym_id INT NULL,
-                    member_id INT NOT NULL,
-                    source VARCHAR(20) NOT NULL DEFAULT 'QR',
-                    checkin_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    purpose VARCHAR(255) DEFAULT NULL,
-                    session_time VARCHAR(50) DEFAULT NULL,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gym_id INTEGER,
+                    member_id INTEGER NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'QR',
+                    checkin_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    purpose TEXT DEFAULT NULL,
+                    session_time TEXT DEFAULT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    KEY idx_checkins_gym (gym_id),
-                    KEY idx_checkins_member (member_id),
-                    KEY idx_checkins_at (checkin_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
+                    FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE
+                )
                 """
             )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS gym_notifications (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    gym_id INT NOT NULL,
-                    member_id INT DEFAULT NULL,
-                    kind VARCHAR(50) NOT NULL,
-                    message VARCHAR(255) NOT NULL,
-                    data_json LONGTEXT DEFAULT NULL,
-                    is_read TINYINT(1) NOT NULL DEFAULT 0,
-                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    KEY idx_notif_gym (gym_id),
-                    KEY idx_notif_read (is_read),
-                    KEY idx_notif_created (created_at)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gym_id INTEGER NOT NULL,
+                    member_id INTEGER DEFAULT NULL,
+                    kind TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    data_json TEXT DEFAULT NULL,
+                    is_read INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
+                    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
+                )
                 """
             )
 
-            safe_exec(cursor, "ALTER TABLE members ADD COLUMN gym_id INT NULL")
-            safe_exec(cursor, "ALTER TABLE members ADD COLUMN phone_normalized VARCHAR(20) DEFAULT NULL")
-            safe_exec(cursor, "ALTER TABLE members ADD COLUMN purpose VARCHAR(255) DEFAULT NULL")
-            safe_exec(cursor, "ALTER TABLE members ADD COLUMN preferred_time VARCHAR(50) DEFAULT NULL")
-            safe_exec(cursor, "ALTER TABLE members DROP INDEX uq_members_phone_normalized")
-            safe_exec(cursor, "ALTER TABLE member_checkins ADD COLUMN gym_id INT NULL")
+            if not has_column(conn, "members", "gym_id"):
+                safe_exec(cursor, "ALTER TABLE members ADD COLUMN gym_id INTEGER")
+            if not has_column(conn, "members", "phone_normalized"):
+                safe_exec(cursor, "ALTER TABLE members ADD COLUMN phone_normalized TEXT DEFAULT NULL")
+            if not has_column(conn, "members", "purpose"):
+                safe_exec(cursor, "ALTER TABLE members ADD COLUMN purpose TEXT DEFAULT NULL")
+            if not has_column(conn, "members", "preferred_time"):
+                safe_exec(cursor, "ALTER TABLE members ADD COLUMN preferred_time TEXT DEFAULT NULL")
+            if not has_column(conn, "member_checkins", "gym_id"):
+                safe_exec(cursor, "ALTER TABLE member_checkins ADD COLUMN gym_id INTEGER")
 
             cursor.execute("SELECT COUNT(*) AS cnt FROM gyms")
             gyms_count = int((cursor.fetchone() or {}).get("cnt") or 0)
@@ -291,7 +344,7 @@ def init_database() -> None:
                         gym_name, owner_name, email, password_hash, checkin_token,
                         at_risk_message, lost_message, promo_message
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         "Legacy Gym",
@@ -311,48 +364,41 @@ def init_database() -> None:
                 legacy_gym_id = int(row["id"]) if row else None
 
             if legacy_gym_id:
-                cursor.execute("UPDATE members SET gym_id = %s WHERE gym_id IS NULL OR gym_id = 0", (legacy_gym_id,))
+                cursor.execute("UPDATE members SET gym_id = ? WHERE gym_id IS NULL OR gym_id = 0", (legacy_gym_id,))
                 cursor.execute(
                     """
-                    UPDATE member_checkins c
-                    JOIN members m ON m.id = c.member_id
-                    SET c.gym_id = m.gym_id
-                    WHERE c.gym_id IS NULL OR c.gym_id = 0
+                    UPDATE member_checkins
+                    SET gym_id = (
+                        SELECT m.gym_id
+                        FROM members m
+                        WHERE m.id = member_checkins.member_id
+                    )
+                    WHERE (gym_id IS NULL OR gym_id = 0)
+                      AND EXISTS (
+                        SELECT 1 FROM members m WHERE m.id = member_checkins.member_id
+                    )
                     """
                 )
 
             cursor.execute("SELECT id, phone FROM members")
             for row in cursor.fetchall():
                 cursor.execute(
-                    "UPDATE members SET phone_normalized = %s WHERE id = %s",
+                    "UPDATE members SET phone_normalized = ? WHERE id = ?",
                     (normalize_phone(str(row.get("phone") or "")), int(row["id"])),
                 )
 
-            safe_exec(cursor, "ALTER TABLE members MODIFY gym_id INT NOT NULL")
-            safe_exec(cursor, "ALTER TABLE member_checkins MODIFY gym_id INT NOT NULL")
-            safe_exec(cursor, "ALTER TABLE members ADD UNIQUE KEY uq_members_gym_phone (gym_id, phone_normalized)")
-            safe_exec(cursor, "ALTER TABLE members ADD KEY idx_members_gym (gym_id)")
-            safe_exec(
-                cursor,
-                "ALTER TABLE members ADD CONSTRAINT fk_members_gym FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE",
-            )
-            safe_exec(
-                cursor,
-                "ALTER TABLE member_checkins ADD CONSTRAINT fk_checkins_member FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE",
-            )
-            safe_exec(
-                cursor,
-                "ALTER TABLE member_checkins ADD CONSTRAINT fk_checkins_gym FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE",
-            )
-            safe_exec(
-                cursor,
-                "ALTER TABLE gym_notifications ADD CONSTRAINT fk_notifications_gym FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE",
-            )
-            safe_exec(
-                cursor,
-                "ALTER TABLE gym_notifications ADD CONSTRAINT fk_notifications_member FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL",
-            )
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_members_gym ON members(gym_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_checkins_gym ON member_checkins(gym_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_checkins_member ON member_checkins(member_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_checkins_at ON member_checkins(checkin_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_gym ON gym_notifications(gym_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_read ON gym_notifications(is_read)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_created ON gym_notifications(created_at)")
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_members_gym_phone ON members(gym_id, phone_normalized)")
         conn.commit()
+
+
+init_database()
 
 
 def current_gym_id() -> int | None:
@@ -461,7 +507,7 @@ def has_member_checked_in_today(gym_id: int, member_id: int) -> bool:
 
 
 def insert_notification(
-    conn: mysql.connector.MySQLConnection,
+    conn: sqlite3.Connection,
     gym_id: int,
     kind: str,
     message: str,
@@ -486,7 +532,7 @@ def insert_notification(
 
 
 def log_member_checkin(
-    conn: mysql.connector.MySQLConnection,
+    conn: sqlite3.Connection,
     gym_id: int,
     member_id: int,
     source: str,
@@ -554,7 +600,9 @@ def parse_member_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str |
 
 
 def member_to_dict(member_row: dict[str, Any], templates: dict[str, str]) -> dict[str, Any]:
-    status = status_engine(member_row.get("last_visit"), member_row.get("expiry_date"))
+    last_visit = to_date(member_row.get("last_visit"))
+    expiry_date = to_date(member_row.get("expiry_date"))
+    status = status_engine(last_visit, expiry_date)
     msg_template = templates["lost"] if status == "Lost" else templates["at_risk"]
     default_message = render_message_template(msg_template, str(member_row.get("name") or ""))
     phone = str(member_row.get("phone") or "")
@@ -565,15 +613,15 @@ def member_to_dict(member_row: dict[str, Any], templates: dict[str, str]) -> dic
         "name": member_row.get("name"),
         "phone": phone,
         "phone_whatsapp": normalize_phone(phone) or "",
-        "last_visit": member_row["last_visit"].isoformat() if member_row.get("last_visit") else None,
-        "expiry_date": member_row["expiry_date"].isoformat() if member_row.get("expiry_date") else None,
+        "last_visit": last_visit.isoformat() if last_visit else None,
+        "expiry_date": expiry_date.isoformat() if expiry_date else None,
         "monthly_fee": float(member_row.get("monthly_fee") or 0),
         "goal": member_row.get("goal"),
         "purpose": member_row.get("purpose"),
         "preferred_time": member_row.get("preferred_time"),
-        "created_at": member_row["created_at"].isoformat() if member_row.get("created_at") else None,
+        "created_at": to_iso(member_row.get("created_at")),
         "status": status,
-        "days_inactive": inactive_days(member_row.get("last_visit")),
+        "days_inactive": inactive_days(last_visit),
         "default_message": default_message,
         "whatsapp_url": build_whatsapp_url(phone, default_message),
     }
@@ -784,7 +832,7 @@ def api_dashboard() -> Any:
                 "source": row.get("source"),
                 "purpose": row.get("purpose"),
                 "session_time": row.get("session_time"),
-                "checkin_at": row["checkin_at"].isoformat() if row.get("checkin_at") else None,
+                "checkin_at": to_iso(row.get("checkin_at")),
             }
         )
 
@@ -805,7 +853,7 @@ def api_dashboard() -> Any:
                 "member_id": int(row["member_id"]) if row.get("member_id") else None,
                 "member_name": member["name"] if member else None,
                 "is_read": bool(row.get("is_read")),
-                "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+                "created_at": to_iso(row.get("created_at")),
                 "data": data_json,
             }
         )
@@ -1009,8 +1057,8 @@ def api_create_member() -> Any:
                 )
                 conn.commit()
                 member_id = int(cursor.lastrowid)
-            except mysql.connector.Error as exc:
-                if exc.errno == 1062:
+            except sqlite3.IntegrityError as exc:
+                if "UNIQUE constraint failed" in str(exc):
                     return jsonify({"ok": False, "error": "Phone already exists for another member in this gym."}), 409
                 raise
     gym = fetch_gym_by_id(gym_id) or {}
@@ -1068,8 +1116,8 @@ def api_update_member(member_id: int) -> Any:
                     ),
                 )
                 conn.commit()
-            except mysql.connector.Error as exc:
-                if exc.errno == 1062:
+            except sqlite3.IntegrityError as exc:
+                if "UNIQUE constraint failed" in str(exc):
                     return jsonify({"ok": False, "error": "Phone already exists for another member in this gym."}), 409
                 raise
     gym = fetch_gym_by_id(gym_id) or {}
@@ -1310,8 +1358,8 @@ def api_public_checkin_submit() -> Any:
                         ),
                     )
                     member_id = int(cursor.lastrowid)
-                except mysql.connector.Error as exc:
-                    if exc.errno == 1062:
+                except sqlite3.IntegrityError as exc:
+                    if "UNIQUE constraint failed" in str(exc):
                         concurrent = fetch_member_by_phone(gym_id, phone_raw)
                         if not concurrent:
                             raise
@@ -1358,5 +1406,4 @@ def internal_error(_: Exception) -> Any:
 
 
 if __name__ == "__main__":
-    init_database()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))

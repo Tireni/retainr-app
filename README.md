@@ -4,7 +4,7 @@ Retainr helps gyms recover lost members and increase revenue automatically.
 
 ## Stack
 
-- Backend: Python (Flask) + MySQL
+- Backend: Python (Flask) + SQLite
 - Frontend: HTML + JavaScript + CSS
 
 ## What this build includes
@@ -68,11 +68,7 @@ pip install -r requirements.txt
 2. Configure environment variables:
 
 ```bash
-set DB_HOST=127.0.0.1
-set DB_PORT=3306
-set DB_USER=root
-set DB_PASSWORD=
-set DB_NAME=retainr
+set DB_PATH=retainr.sqlite3
 set PORT=5000
 set SECRET_KEY=change-this-secret
 ```
