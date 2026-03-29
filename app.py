@@ -1225,6 +1225,7 @@ def api_checkin_qr_download() -> Any:
     checkin_link = request.host_url.rstrip("/") + "/checkin/" + str(gym["checkin_token"])
     qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=" + quote_plus(checkin_link)
 
+
     try:
         with urlopen(qr_url, timeout=12) as response:
             qr_binary = response.read()
