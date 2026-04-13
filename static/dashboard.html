@@ -26,7 +26,7 @@
 
   <main class="container">
     <h1 id="gym-heading">Dashboard</h1>
-    <p class="page-subtitle">Find lost members, bring them back, and protect gym revenue.</p>
+    <p class="page-subtitle">Find lost members, bring them back, and protect business revenue.</p>
 
     <div id="dashboard-alert" class="alert error" style="display:none;"></div>
 
@@ -54,19 +54,19 @@
     </section>
 
     <section>
-      <h2 class="section-title">Gym Check-In Link</h2>
+      <h2 class="section-title">Business Check-In Link</h2>
       <div class="card">
         <div class="row mobile-col">
           <div class="qr-box">
             <img id="checkin-qr-image" alt="Check-in QR code">
           </div>
           <div class="grow">
-            <p class="muted">Show this QR at your cashier desk so members can self check-in.</p>
+            <p class="muted">Show this QR at your front desk so members can self check-in.</p>
             <p><strong>Link:</strong> <a id="checkin-url-link" href="/my-checkin">-</a></p>
             <div class="row">
               <button id="copy-checkin-link-btn" type="button">Copy Link</button>
               <a class="btn btn-secondary" id="open-checkin-link-btn" href="/my-checkin" target="_blank" rel="noopener">Open Link</a>
-              <a class="btn btn-secondary" id="download-checkin-qr-btn" href="/api/checkin/qr/download" download>Download QR</a>
+              <a class="btn btn-secondary" id="download-checkin-qr-btn" href="/api/checkin/qr/download" download>Download QR Sticker</a>
             </div>
           </div>
         </div>
@@ -76,7 +76,11 @@
     <section id="notifications-section">
       <div class="row space-between">
         <h2 class="section-title" style="margin-bottom:0;">Notifications</h2>
-        <button id="mark-notifications-read-btn" class="btn btn-secondary" type="button">Mark All Read</button>
+        <div class="row">
+          <span id="browser-alert-status" class="muted">Browser Alerts: Not Enabled</span>
+          <button id="enable-browser-alerts-btn" class="btn btn-secondary" type="button">Enable Browser Alerts</button>
+          <button id="mark-notifications-read-btn" class="btn btn-secondary" type="button">Mark All Read</button>
+        </div>
       </div>
       <div id="notification-list" class="notification-list"></div>
     </section>
@@ -164,11 +168,11 @@
     </section>
 
     <section>
-      <h2 class="section-title">Gym Profile & Social Links</h2>
+      <h2 class="section-title">Business Profile & Social Links</h2>
       <div class="card">
         <div class="form-grid">
           <div>
-            <label for="gym-name-input">Gym Name</label>
+            <label for="gym-name-input">Business Name</label>
             <input id="gym-name-input">
           </div>
           <div>
@@ -177,27 +181,37 @@
           </div>
           <div>
             <label for="instagram-url-input">Instagram URL</label>
-            <input id="instagram-url-input" placeholder="https://instagram.com/yourgym">
+            <input id="instagram-url-input" placeholder="https://instagram.com/yourbusiness">
           </div>
           <div>
             <label for="facebook-url-input">Facebook URL</label>
-            <input id="facebook-url-input" placeholder="https://facebook.com/yourgym">
+            <input id="facebook-url-input" placeholder="https://facebook.com/yourbusiness">
           </div>
           <div>
             <label for="tiktok-url-input">TikTok URL</label>
-            <input id="tiktok-url-input" placeholder="https://tiktok.com/@yourgym">
+            <input id="tiktok-url-input" placeholder="https://tiktok.com/@yourbusiness">
           </div>
           <div>
             <label for="x-url-input">X URL</label>
-            <input id="x-url-input" placeholder="https://x.com/yourgym">
+            <input id="x-url-input" placeholder="https://x.com/yourbusiness">
           </div>
           <div>
             <label for="website-url-input">Website URL</label>
-            <input id="website-url-input" placeholder="https://yourgym.com">
+            <input id="website-url-input" placeholder="https://yourbusiness.com">
           </div>
         </div>
+        <div style="margin-top:12px;">
+          <label for="company-logo-input">Company Logo (used on QR sticker)</label>
+          <input id="company-logo-input" type="file" accept="image/*">
+          <div class="row" style="margin-top:8px;">
+            <button id="upload-company-logo-btn" type="button">Upload Logo</button>
+            <button id="remove-company-logo-btn" class="btn btn-secondary" type="button">Remove Logo</button>
+          </div>
+          <div class="muted" style="margin-top:8px;">When logo is uploaded, QR sticker uses <code>logoab.png</code> layout; otherwise it uses <code>qrab.png</code>.</div>
+          <img id="company-logo-preview" alt="Company logo preview" style="display:none;margin-top:10px;max-width:124px;max-height:118px;border:1px solid var(--border);border-radius:10px;padding:6px;background:#fff;">
+        </div>
         <div class="row" style="margin-top:12px;">
-          <button id="save-gym-settings-btn" type="button">Save Gym Settings</button>
+          <button id="save-gym-settings-btn" type="button">Save Business Settings</button>
         </div>
       </div>
     </section>

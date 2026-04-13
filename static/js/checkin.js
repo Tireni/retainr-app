@@ -100,11 +100,11 @@ function resetFlow() {
 async function loadContext() {
   checkinToken = resolveTokenFromUrl();
   if (!checkinToken) {
-    throw new Error("Invalid check-in link. Ask your gym for their QR/check-in URL.");
+    throw new Error("Invalid check-in link. Ask the business for their QR/check-in URL.");
   }
   const data = await Retainr.apiRequest(`/public/checkin/context/${encodeURIComponent(checkinToken)}`);
   currentGym = data.gym || null;
-  gymNameEl.textContent = `${currentGym?.gym_name || "Gym"} Check-In`;
+  gymNameEl.textContent = `${currentGym?.gym_name || "Business"} Check-In`;
   ownerNameEl.textContent = currentGym?.owner_name ? `Managed by ${currentGym.owner_name}` : "";
   renderSocialLinks(currentGym?.socials || {});
 }
@@ -165,7 +165,7 @@ async function submitCheckin(payload, button) {
       }),
     });
     const memberName = data.member?.name || "Member";
-    successText.textContent = `${memberName}, you're checked in. Have a great workout.`;
+    successText.textContent = `${memberName}, you're checked in. Have a great session.`;
     showStep(stepSuccess);
   } catch (error) {
     showAlert(error.message);

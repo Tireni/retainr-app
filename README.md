@@ -1,6 +1,6 @@
-# Retainr (Multi-Gym MVP)
+# Retainr (Multi-Business MVP)
 
-Retainr helps gyms recover lost members and increase revenue automatically.
+Retainr helps businesses recover lost members and increase revenue automatically.
 
 ## Stack
 
@@ -9,15 +9,15 @@ Retainr helps gyms recover lost members and increase revenue automatically.
 
 ## What this build includes
 
-- Gym registration and login (`/register`, `/login`)
-- Multi-tenant data isolation (each gym sees only its own members/check-ins/notifications)
-- Gym-specific public check-in link and QR (`/checkin/<token>`)
+- Business registration and login (`/register`, `/login`)
+- Multi-tenant data isolation (each business sees only its own members/check-ins/notifications)
+- Business-specific public check-in link and QR (`/checkin/<token>`)
 - Dashboard:
   - Stats (Total, Active, At Risk, Lost, Revenue at Risk, Today's Check-Ins)
   - Notification bar (check-ins, duplicate check-in attempts, message-needed alerts)
   - In-dashboard quick messaging to members (status/at-risk/lost/promo/custom)
   - Message template editor
-  - Gym/social profile editor (used on public check-in page)
+  - Business/social profile editor (used on public check-in page)
   - Check-in QR download button
 - Members management:
   - Create, edit, delete
@@ -41,7 +41,7 @@ Retainr helps gyms recover lost members and increase revenue automatically.
   - `GET /dashboard`
   - `GET /members`
   - `GET /member-form`
-  - `GET /my-checkin` (redirects to gym's tokenized public check-in page)
+  - `GET /my-checkin` (redirects to business tokenized public check-in page)
 - Public check-in:
   - `GET /checkin/<token>`
   - `GET /api/public/checkin/context/<token>`
@@ -50,12 +50,12 @@ Retainr helps gyms recover lost members and increase revenue automatically.
 
 ## Database tables
 
-- `gyms`
+- `gyms` (business accounts)
 - `members`
 - `member_checkins`
 - `gym_notifications`
 
-`init_database()` handles table creation and legacy migration for older single-gym data.
+`init_database()` handles table creation and legacy migration for older single-business data.
 
 ## Setup
 
@@ -81,9 +81,9 @@ python app.py
 
 4. Open:
 
-- Register gym: `http://localhost:5000/register`
+- Register business: `http://localhost:5000/register`
 - Login: `http://localhost:5000/login`
-- Public check-in: use each gym's generated link from dashboard
+- Public check-in: use each business's generated link from dashboard
 
 ## Status engine
 

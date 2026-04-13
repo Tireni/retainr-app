@@ -17,15 +17,33 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 LAGOS_TZ = ZoneInfo("Africa/Lagos")
 
-DEFAULT_AT_RISK_TEMPLATE = "Hey {name}, we haven't seen you in a few days. Stay consistent."
-DEFAULT_LOST_TEMPLATE = "Hey {name}, you've been away for a while. Let's get you back on track this week."
-DEFAULT_PROMO_TEMPLATE = "Hi {name}, we have a promo running this week. Come in and take advantage."
+DEFAULT_AT_RISK_TEMPLATE = "Hey {name}, we haven't seen you in a few days. We'd love to have you back soon."
+DEFAULT_LOST_TEMPLATE = "Hey {name}, you've been away for a while. We'd love to welcome you back this week."
+DEFAULT_PROMO_TEMPLATE = "Hi {name}, we have a special offer running this week. Come in and take advantage."
+
+CHECKIN_STICKER_BG_WITH_LOGO = os.path.join(STATIC_DIR, "images", "logoab.png")
+CHECKIN_STICKER_BG_NO_LOGO = os.path.join(STATIC_DIR, "images", "qrab.png")
+GYM_LOGO_UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads", "gym_logos")
+RESAMPLING = getattr(Image, "Resampling", Image)
+
+CHECKIN_LAYOUT_WITH_LOGO = {
+    "canvas": {"width": 500, "height": 700},
+    "qr": {"x": 78, "y": 156, "width": 299, "height": 302},
+    "logo": {"x": 2, "y": 3, "width": 124, "height": 118},
+}
+
+CHECKIN_LAYOUT_NO_LOGO = {
+    "canvas": {"width": 500, "height": 700},
+    "qr": {"x": 90, "y": 155, "width": 271, "height": 275},
+    "logo": None,
+}
 
 
 @dataclass(frozen=True)
@@ -221,6 +239,119 @@ def build_whatsapp_url(phone: str, message_text: str) -> str | None:
     return f"https://wa.me/{normalized}?text={quote_plus(message_text)}"
 
 
+def static_url(path: str | None) -> str | None:
+    value = str(path or "").strip().replace("\\", "/")
+    if not value:
+        return None
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    value = value.lstrip("/")
+    if value.startswith("static/"):
+        return "/" + value
+    return "/static/" + value
+
+
+def gym_logo_abs_path(gym_row: dict[str, Any]) -> str | None:
+    stored = str(gym_row.get("company_logo_path") or "").strip()
+    if not stored:
+        return None
+    candidate = stored
+    if not os.path.isabs(candidate):
+        candidate = os.path.join(BASE_DIR, candidate)
+    candidate = os.path.abspath(candidate)
+    if not os.path.isfile(candidate):
+        return None
+    return candidate
+
+
+def remove_managed_logo_file(path: str | None) -> None:
+    value = str(path or "").strip()
+    if not value:
+        return
+    abs_path = value if os.path.isabs(value) else os.path.join(BASE_DIR, value)
+    abs_path = os.path.abspath(abs_path)
+    managed_root = os.path.abspath(GYM_LOGO_UPLOAD_DIR)
+    if not abs_path.startswith(managed_root + os.sep):
+        return
+    if os.path.isfile(abs_path):
+        try:
+            os.remove(abs_path)
+        except OSError:
+            pass
+
+
+def fetch_qr_png(checkin_link: str, size: int = 1000) -> Image.Image:
+    qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=" + str(size) + "x" + str(size) + "&data=" + quote_plus(checkin_link)
+    with urlopen(qr_url, timeout=15) as response:
+        binary = response.read()
+    return Image.open(BytesIO(binary)).convert("RGBA")
+
+
+def render_checkin_sticker_binary(gym_row: dict[str, Any], checkin_link: str) -> bytes:
+    logo_path = gym_logo_abs_path(gym_row)
+    with_logo = logo_path is not None
+    layout = CHECKIN_LAYOUT_WITH_LOGO if with_logo else CHECKIN_LAYOUT_NO_LOGO
+    bg_path = CHECKIN_STICKER_BG_WITH_LOGO if with_logo else CHECKIN_STICKER_BG_NO_LOGO
+
+    canvas_w = int(layout["canvas"]["width"])
+    canvas_h = int(layout["canvas"]["height"])
+    qr_box = layout["qr"]
+
+    if os.path.isfile(bg_path):
+        canvas = Image.open(bg_path).convert("RGBA").resize((canvas_w, canvas_h), RESAMPLING.LANCZOS)
+    else:
+        canvas = Image.new("RGBA", (canvas_w, canvas_h), (255, 255, 255, 255))
+
+    qr_img = fetch_qr_png(checkin_link, size=1200).resize(
+        (int(qr_box["width"]), int(qr_box["height"])),
+        RESAMPLING.LANCZOS,
+    )
+    canvas.alpha_composite(qr_img, (int(qr_box["x"]), int(qr_box["y"])))
+
+    if with_logo and layout.get("logo"):
+        logo_box = layout["logo"]
+        logo_img = Image.open(str(logo_path)).convert("RGBA")
+        bounded_logo = ImageOps.contain(
+            logo_img,
+            (int(logo_box["width"]), int(logo_box["height"])),
+            RESAMPLING.LANCZOS,
+        )
+        logo_slot = Image.new("RGBA", (int(logo_box["width"]), int(logo_box["height"])), (0, 0, 0, 0))
+        logo_slot.alpha_composite(
+            bounded_logo,
+            (
+                (int(logo_box["width"]) - bounded_logo.width) // 2,
+                (int(logo_box["height"]) - bounded_logo.height) // 2,
+            ),
+        )
+        canvas.alpha_composite(logo_slot, (int(logo_box["x"]), int(logo_box["y"])))
+
+    out = BytesIO()
+    canvas.save(out, format="PNG")
+    out.seek(0)
+    return out.getvalue()
+
+
+def save_uploaded_gym_logo(gym_id: int, file_storage: Any) -> tuple[str, str]:
+    if file_storage is None:
+        raise ValueError("No logo file provided.")
+    os.makedirs(GYM_LOGO_UPLOAD_DIR, exist_ok=True)
+    try:
+        image = Image.open(file_storage.stream).convert("RGBA")
+    except UnidentifiedImageError as exc:
+        raise ValueError("Invalid image file. Upload PNG, JPG, or WEBP.") from exc
+
+    max_size = 1800
+    if image.width > max_size or image.height > max_size:
+        image.thumbnail((max_size, max_size), RESAMPLING.LANCZOS)
+
+    filename = f"gym_{gym_id}_{int(lagos_now().timestamp())}.png"
+    abs_path = os.path.join(GYM_LOGO_UPLOAD_DIR, filename)
+    image.save(abs_path, format="PNG")
+    rel_path = os.path.relpath(abs_path, BASE_DIR).replace("\\", "/")
+    return rel_path, abs_path
+
+
 def gym_templates(gym_row: dict[str, Any]) -> dict[str, str]:
     return {
         "at_risk": str(gym_row.get("at_risk_message") or DEFAULT_AT_RISK_TEMPLATE),
@@ -263,6 +394,7 @@ def init_database() -> None:
                     tiktok_url TEXT DEFAULT NULL,
                     x_url TEXT DEFAULT NULL,
                     website_url TEXT DEFAULT NULL,
+                    company_logo_path TEXT DEFAULT NULL,
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
@@ -330,6 +462,8 @@ def init_database() -> None:
                 safe_exec(cursor, "ALTER TABLE members ADD COLUMN preferred_time TEXT DEFAULT NULL")
             if not has_column(conn, "member_checkins", "gym_id"):
                 safe_exec(cursor, "ALTER TABLE member_checkins ADD COLUMN gym_id INTEGER")
+            if not has_column(conn, "gyms", "company_logo_path"):
+                safe_exec(cursor, "ALTER TABLE gyms ADD COLUMN company_logo_path TEXT DEFAULT NULL")
 
             cursor.execute("SELECT COUNT(*) AS cnt FROM gyms")
             gyms_count = int((cursor.fetchone() or {}).get("cnt") or 0)
@@ -347,7 +481,7 @@ def init_database() -> None:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        "Legacy Gym",
+                        "Legacy Business",
                         "Legacy Admin",
                         "legacy@retainr.local",
                         generate_password_hash("legacy12345"),
@@ -714,7 +848,7 @@ def api_auth_register() -> Any:
     password = str(payload.get("password") or "")
 
     if not gym_name:
-        return jsonify({"ok": False, "error": "Gym name is required."}), 400
+        return jsonify({"ok": False, "error": "Business name is required."}), 400
     if not email or "@" not in email:
         return jsonify({"ok": False, "error": "Valid email is required."}), 400
     if len(password) < 6:
@@ -781,7 +915,7 @@ def api_dashboard() -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym account not found."}), 404
+        return jsonify({"ok": False, "error": "Business account not found."}), 404
 
     templates = gym_templates(gym)
     members_raw = fetch_members_for_gym(gym_id)
@@ -874,7 +1008,8 @@ def api_dashboard() -> Any:
 
     origin = request.host_url.rstrip("/")
     checkin_link = origin + "/checkin/" + str(gym["checkin_token"])
-    checkin_qr = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" + quote_plus(checkin_link)
+    checkin_qr = "/api/checkin/qr/image?v=" + quote_plus(str(lagos_now_naive().isoformat()))
+    company_logo_url = static_url(gym.get("company_logo_path"))
 
     return jsonify(
         {
@@ -887,6 +1022,8 @@ def api_dashboard() -> Any:
                 "checkin_token": gym["checkin_token"],
                 "checkin_link": checkin_link,
                 "checkin_qr_image_url": checkin_qr,
+                "company_logo_url": company_logo_url,
+                "has_company_logo": bool(company_logo_url),
                 "templates": templates,
                 "socials": gym_socials(gym),
             },
@@ -920,7 +1057,7 @@ def api_gym_settings() -> Any:
     x_url = str(payload.get("x_url") or "").strip() or None
     website_url = str(payload.get("website_url") or "").strip() or None
     if not gym_name:
-        return jsonify({"ok": False, "error": "Gym name is required."}), 400
+        return jsonify({"ok": False, "error": "Business name is required."}), 400
     with db_connection() as conn:
         with db_cursor(conn) as cursor:
             cursor.execute(
@@ -933,6 +1070,62 @@ def api_gym_settings() -> Any:
             )
         conn.commit()
     session["retainr_gym_name"] = gym_name
+    return jsonify({"ok": True})
+
+
+@app.post("/api/gym/logo")
+def api_gym_logo_upload() -> Any:
+    gym_id = current_gym_id()
+    if not gym_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    gym = fetch_gym_by_id(gym_id)
+    if not gym:
+        return jsonify({"ok": False, "error": "Business not found."}), 404
+    upload = request.files.get("logo")
+    if upload is None or not str(upload.filename or "").strip():
+        return jsonify({"ok": False, "error": "Select a logo image to upload."}), 400
+
+    try:
+        rel_path, _ = save_uploaded_gym_logo(gym_id, upload)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Unable to process logo image."}), 500
+
+    old_path = str(gym.get("company_logo_path") or "").strip()
+
+    with db_connection() as conn:
+        with db_cursor(conn) as cursor:
+            cursor.execute("UPDATE gyms SET company_logo_path = %s WHERE id = %s", (rel_path, gym_id))
+        conn.commit()
+
+    if old_path:
+        old_abs_path = old_path if os.path.isabs(old_path) else os.path.join(BASE_DIR, old_path)
+        new_abs_path = os.path.join(BASE_DIR, rel_path)
+        if os.path.abspath(old_abs_path) != os.path.abspath(new_abs_path):
+            remove_managed_logo_file(old_path)
+
+    return jsonify({"ok": True, "company_logo_url": static_url(rel_path)})
+
+
+@app.delete("/api/gym/logo")
+def api_gym_logo_delete() -> Any:
+    gym_id = current_gym_id()
+    if not gym_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    gym = fetch_gym_by_id(gym_id)
+    if not gym:
+        return jsonify({"ok": False, "error": "Business not found."}), 404
+
+    old_path = str(gym.get("company_logo_path") or "").strip()
+    with db_connection() as conn:
+        with db_cursor(conn) as cursor:
+            cursor.execute("UPDATE gyms SET company_logo_path = NULL WHERE id = %s", (gym_id,))
+        conn.commit()
+
+    if old_path:
+        remove_managed_logo_file(old_path)
+
     return jsonify({"ok": True})
 
 
@@ -967,7 +1160,7 @@ def api_messages_link() -> Any:
 
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
     member = fetch_member_or_none(gym_id, member_id)
     if not member:
         return jsonify({"ok": False, "error": "Member not found."}), 404
@@ -1010,7 +1203,7 @@ def api_members() -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
 
     status_filter = str(request.args.get("status", "all")).strip().lower()
     query = str(request.args.get("q", "")).strip().lower()
@@ -1059,7 +1252,7 @@ def api_create_member() -> Any:
                 member_id = int(cursor.lastrowid)
             except sqlite3.IntegrityError as exc:
                 if "UNIQUE constraint failed" in str(exc):
-                    return jsonify({"ok": False, "error": "Phone already exists for another member in this gym."}), 409
+                    return jsonify({"ok": False, "error": "Phone already exists for another member in this business."}), 409
                 raise
     gym = fetch_gym_by_id(gym_id) or {}
     member = fetch_member_or_none(gym_id, member_id)
@@ -1073,7 +1266,7 @@ def api_get_member(member_id: int) -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
     member = fetch_member_or_none(gym_id, member_id)
     if not member:
         return jsonify({"ok": False, "error": "Member not found."}), 404
@@ -1118,7 +1311,7 @@ def api_update_member(member_id: int) -> Any:
                 conn.commit()
             except sqlite3.IntegrityError as exc:
                 if "UNIQUE constraint failed" in str(exc):
-                    return jsonify({"ok": False, "error": "Phone already exists for another member in this gym."}), 409
+                    return jsonify({"ok": False, "error": "Phone already exists for another member in this business."}), 409
                 raise
     gym = fetch_gym_by_id(gym_id) or {}
     updated = fetch_member_or_none(gym_id, member_id)
@@ -1183,7 +1376,7 @@ def api_member_message(member_id: int) -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
     member = fetch_member_or_none(gym_id, member_id)
     if not member:
         return jsonify({"ok": False, "error": "Member not found."}), 404
@@ -1207,10 +1400,34 @@ def api_checkin_qr() -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
     checkin_link = request.host_url.rstrip("/") + "/checkin/" + str(gym["checkin_token"])
-    qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" + quote_plus(checkin_link)
+    qr_url = "/api/checkin/qr/image?v=" + quote_plus(str(lagos_now_naive().isoformat()))
     return jsonify({"ok": True, "checkin_link": checkin_link, "qr_image_url": qr_url})
+
+
+@app.get("/api/checkin/qr/image")
+def api_checkin_qr_image() -> Any:
+    gym_id = current_gym_id()
+    if not gym_id:
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    gym = fetch_gym_by_id(gym_id)
+    if not gym:
+        return jsonify({"ok": False, "error": "Business not found."}), 404
+
+    checkin_link = request.host_url.rstrip("/") + "/checkin/" + str(gym["checkin_token"])
+    try:
+        sticker_binary = render_checkin_sticker_binary(gym, checkin_link)
+    except Exception:
+        return jsonify({"ok": False, "error": "Unable to generate QR image right now. Please try again."}), 502
+
+    return send_file(
+        BytesIO(sticker_binary),
+        mimetype="image/png",
+        as_attachment=False,
+        download_name="checkin_qr_preview.png",
+        max_age=0,
+    )
 
 
 @app.get("/api/checkin/qr/download")
@@ -1220,24 +1437,20 @@ def api_checkin_qr_download() -> Any:
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
     gym = fetch_gym_by_id(gym_id)
     if not gym:
-        return jsonify({"ok": False, "error": "Gym not found."}), 404
+        return jsonify({"ok": False, "error": "Business not found."}), 404
 
     checkin_link = request.host_url.rstrip("/") + "/checkin/" + str(gym["checkin_token"])
-    qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=" + quote_plus(checkin_link)
-
-
     try:
-        with urlopen(qr_url, timeout=12) as response:
-            qr_binary = response.read()
+        sticker_binary = render_checkin_sticker_binary(gym, checkin_link)
     except Exception:
         return jsonify({"ok": False, "error": "Unable to generate QR image right now. Please try again."}), 502
 
-    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(gym.get("gym_name") or "gym").strip()).strip("_")
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", str(gym.get("gym_name") or "business").strip()).strip("_")
     if not safe_name:
-        safe_name = "gym"
-    filename = f"{safe_name}_checkin_qr.png"
+        safe_name = "business"
+    filename = f"{safe_name}_checkin_qr_sticker.png"
     return send_file(
-        BytesIO(qr_binary),
+        BytesIO(sticker_binary),
         mimetype="image/png",
         as_attachment=True,
         download_name=filename,
@@ -1387,7 +1600,7 @@ def api_public_checkin_submit() -> Any:
             "ok": True,
             "mode": mode,
             "member": member_to_dict(member_after, gym_templates(gym)) if member_after else None,
-            "checkin_message": "You're checked in. Have a great workout.",
+            "checkin_message": "You're checked in. Have a great session.",
         }
     )
 

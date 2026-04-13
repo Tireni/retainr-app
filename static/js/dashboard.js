@@ -17,6 +17,7 @@ const checkinQrImage = document.getElementById("checkin-qr-image");
 const checkinUrlLink = document.getElementById("checkin-url-link");
 const openCheckinLinkBtn = document.getElementById("open-checkin-link-btn");
 const copyCheckinLinkBtn = document.getElementById("copy-checkin-link-btn");
+const downloadCheckinQrBtn = document.getElementById("download-checkin-qr-btn");
 
 const messageMemberSelect = document.getElementById("message-member-select");
 const messageTemplateSelect = document.getElementById("message-template-select");
@@ -24,6 +25,8 @@ const quickMessageBox = document.getElementById("quick-message-box");
 const composeTemplateBtn = document.getElementById("compose-template-btn");
 const sendQuickMessageBtn = document.getElementById("send-quick-message-btn");
 const markNotificationsReadBtn = document.getElementById("mark-notifications-read-btn");
+const enableBrowserAlertsBtn = document.getElementById("enable-browser-alerts-btn");
+const browserAlertStatus = document.getElementById("browser-alert-status");
 
 const atRiskTemplateInput = document.getElementById("at-risk-template");
 const lostTemplateInput = document.getElementById("lost-template");
@@ -38,10 +41,19 @@ const tiktokUrlInput = document.getElementById("tiktok-url-input");
 const xUrlInput = document.getElementById("x-url-input");
 const websiteUrlInput = document.getElementById("website-url-input");
 const saveGymSettingsBtn = document.getElementById("save-gym-settings-btn");
+const companyLogoInput = document.getElementById("company-logo-input");
+const uploadCompanyLogoBtn = document.getElementById("upload-company-logo-btn");
+const removeCompanyLogoBtn = document.getElementById("remove-company-logo-btn");
+const companyLogoPreview = document.getElementById("company-logo-preview");
 
 let dashboardData = null;
 let members = [];
 const membersById = new Map();
+let pollTimer = null;
+let currentBusinessId = null;
+let hasBaselineEvents = false;
+let notifiedEventKeys = new Set();
+const DASHBOARD_POLL_INTERVAL_MS = 30000;
 
 function showAlert(message, type = "error") {
   alertBox.className = `alert ${type}`;
@@ -65,6 +77,147 @@ function openWhatsapp(url) {
     return false;
   }
   return true;
+}
+
+function browserNotificationsSupported() {
+  return "Notification" in window;
+}
+
+function currentPermissionLabel() {
+  if (!browserNotificationsSupported()) return "Not Supported";
+  if (Notification.permission === "granted") return "Enabled";
+  if (Notification.permission === "denied") return "Blocked";
+  return "Not Enabled";
+}
+
+function updateBrowserAlertStatusLabel() {
+  if (!browserAlertStatus) return;
+  const label = currentPermissionLabel();
+  browserAlertStatus.textContent = `Browser Alerts: ${label}`;
+  if (!enableBrowserAlertsBtn) return;
+  if (!browserNotificationsSupported() || Notification.permission === "granted") {
+    enableBrowserAlertsBtn.style.display = "none";
+  } else {
+    enableBrowserAlertsBtn.style.display = "inline-flex";
+    enableBrowserAlertsBtn.disabled = false;
+    enableBrowserAlertsBtn.textContent = "Enable Browser Alerts";
+  }
+}
+
+function notifiedStorageKey(businessId) {
+  return `retainr_notified_events_${businessId}`;
+}
+
+function loadNotifiedKeys(businessId) {
+  const out = new Set();
+  if (!businessId) return out;
+  try {
+    const raw = localStorage.getItem(notifiedStorageKey(businessId));
+    const arr = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(arr)) {
+      arr.forEach((v) => {
+        if (typeof v === "string" && v.trim()) {
+          out.add(v);
+        }
+      });
+    }
+  } catch (_) {
+    // ignore corrupted local storage
+  }
+  return out;
+}
+
+function saveNotifiedKeys(businessId) {
+  if (!businessId) return;
+  try {
+    const items = Array.from(notifiedEventKeys);
+    const trimmed = items.slice(-500);
+    localStorage.setItem(notifiedStorageKey(businessId), JSON.stringify(trimmed));
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function notificationEventKey(item) {
+  if (item.id !== null && item.id !== undefined) {
+    return `db:${item.id}`;
+  }
+  const kind = String(item.kind || "NOTICE").toUpperCase();
+  const memberId = item.member_id ? Number(item.member_id) : 0;
+  if (kind === "MESSAGE_NEEDED" && memberId > 0) {
+    const status = String((item.data && item.data.status) || "").toUpperCase() || "UNKNOWN";
+    return `attention:${memberId}:${status}`;
+  }
+  const createdAt = String(item.created_at || "");
+  const message = String(item.message || "");
+  return `adhoc:${kind}:${memberId}:${createdAt}:${message}`;
+}
+
+function notificationTitle(item, businessName) {
+  const kind = String(item.kind || "").toUpperCase();
+  if (kind === "CHECKIN") return `${businessName}: New Check-In`;
+  if (kind === "DUPLICATE_CHECKIN") return `${businessName}: Duplicate Check-In Attempt`;
+  if (kind === "MESSAGE_NEEDED") return `${businessName}: Member Needs Follow-Up`;
+  return `${businessName}: New Alert`;
+}
+
+function showBrowserNotification(item, businessName) {
+  if (!browserNotificationsSupported() || Notification.permission !== "granted") return;
+  const title = notificationTitle(item, businessName || "Retainr");
+  const body = String(item.message || "You have a new dashboard alert.");
+  try {
+    const notification = new Notification(title, {
+      body,
+      icon: "/static/images/logo.png",
+      badge: "/static/images/logo.png",
+      tag: notificationEventKey(item),
+      renotify: false,
+    });
+    notification.onclick = () => {
+      window.focus();
+      window.location.hash = "notifications-section";
+      notification.close();
+    };
+    window.setTimeout(() => notification.close(), 12000);
+  } catch (_) {
+    // Ignore browser notification failures
+  }
+}
+
+function processIncomingBrowserAlerts(data, notifyNew) {
+  const gym = data.gym || {};
+  const businessId = Number(gym.id || 0);
+  if (!businessId) return;
+
+  if (currentBusinessId !== businessId) {
+    currentBusinessId = businessId;
+    hasBaselineEvents = false;
+    notifiedEventKeys = loadNotifiedKeys(currentBusinessId);
+  }
+
+  const events = Array.isArray(data.notifications) ? data.notifications : [];
+  if (!hasBaselineEvents) {
+    events.forEach((item) => {
+      notifiedEventKeys.add(notificationEventKey(item));
+    });
+    saveNotifiedKeys(currentBusinessId);
+    hasBaselineEvents = true;
+    return;
+  }
+
+  let changed = false;
+  events.forEach((item) => {
+    const key = notificationEventKey(item);
+    if (notifiedEventKeys.has(key)) return;
+    notifiedEventKeys.add(key);
+    changed = true;
+    if (notifyNew) {
+      showBrowserNotification(item, String(gym.gym_name || "Business"));
+    }
+  });
+  if (changed) {
+    saveNotifiedKeys(currentBusinessId);
+  }
 }
 
 async function composeMessage(memberId, templateType = "status") {
@@ -107,10 +260,14 @@ function renderStats(stats) {
 
 function renderCheckin(gym) {
   const checkinLink = gym.checkin_link || "/my-checkin";
-  checkinQrImage.src = gym.checkin_qr_image_url || "";
+  const qrImageUrl = gym.checkin_qr_image_url || "";
+  checkinQrImage.src = qrImageUrl;
   checkinUrlLink.href = checkinLink;
   checkinUrlLink.textContent = checkinLink;
   openCheckinLinkBtn.href = checkinLink;
+  if (downloadCheckinQrBtn) {
+    downloadCheckinQrBtn.href = `/api/checkin/qr/download?v=${Date.now()}`;
+  }
 }
 
 function renderAttention(items) {
@@ -213,7 +370,7 @@ function renderMemberOptions() {
 }
 
 function fillSettings(gym) {
-  gymHeading.textContent = `${gym.gym_name || "Gym"} Dashboard`;
+  gymHeading.textContent = `${gym.gym_name || "Business"} Dashboard`;
   const templates = gym.templates || {};
   atRiskTemplateInput.value = templates.at_risk || "";
   lostTemplateInput.value = templates.lost || "";
@@ -227,6 +384,20 @@ function fillSettings(gym) {
   tiktokUrlInput.value = socials.tiktok_url || "";
   xUrlInput.value = socials.x_url || "";
   websiteUrlInput.value = socials.website_url || "";
+
+  const logoUrl = gym.company_logo_url || "";
+  if (companyLogoPreview) {
+    if (logoUrl) {
+      companyLogoPreview.src = `${logoUrl}${logoUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+      companyLogoPreview.style.display = "block";
+    } else {
+      companyLogoPreview.removeAttribute("src");
+      companyLogoPreview.style.display = "none";
+    }
+  }
+  if (removeCompanyLogoBtn) {
+    removeCompanyLogoBtn.style.display = logoUrl ? "inline-flex" : "none";
+  }
 }
 
 function selectedMemberId() {
@@ -250,9 +421,14 @@ async function refreshMessagePreview() {
   }
 }
 
-async function loadDashboard() {
-  hideAlert();
+async function loadDashboard(options = {}) {
+  const silent = Boolean(options.silent);
+  const notifyBrowser = Boolean(options.notifyBrowser);
+  if (!silent) {
+    hideAlert();
+  }
   dashboardData = await Retainr.apiRequest("/dashboard");
+  processIncomingBrowserAlerts(dashboardData, notifyBrowser);
   const gym = dashboardData.gym || {};
   members = dashboardData.members || [];
   membersById.clear();
@@ -266,6 +442,74 @@ async function loadDashboard() {
   renderMemberOptions();
   fillSettings(gym);
   await refreshMessagePreview();
+}
+
+async function uploadCompanyLogo(file) {
+  const body = new FormData();
+  body.append("logo", file);
+  const res = await fetch("/api/gym/logo", { method: "POST", body });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Upload failed (${res.status})`);
+  }
+  return data;
+}
+
+async function removeCompanyLogo() {
+  const res = await fetch("/api/gym/logo", { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Delete failed (${res.status})`);
+  }
+  return data;
+}
+
+function startDashboardPolling() {
+  if (pollTimer) return;
+  pollTimer = window.setInterval(async () => {
+    try {
+      await loadDashboard({ silent: true, notifyBrowser: true });
+    } catch (_) {
+      // Keep polling; transient network issues should not stop alerts.
+    }
+  }, DASHBOARD_POLL_INTERVAL_MS);
+}
+
+async function requestBrowserAlertsPermission() {
+  if (!browserNotificationsSupported()) {
+    showAlert("This browser does not support desktop notifications.");
+    updateBrowserAlertStatusLabel();
+    return;
+  }
+  if (Notification.permission === "granted") {
+    updateBrowserAlertStatusLabel();
+    showAlert("Browser alerts are already enabled.", "success");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    showAlert("Browser alerts are blocked. Allow notifications for this site in browser settings.");
+    updateBrowserAlertStatusLabel();
+    return;
+  }
+
+  if (enableBrowserAlertsBtn) {
+    enableBrowserAlertsBtn.disabled = true;
+    enableBrowserAlertsBtn.textContent = "Enabling...";
+  }
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      showAlert("Browser alerts enabled. You will now get check-in and inactivity alerts.", "success");
+    } else if (permission === "denied") {
+      showAlert("Browser alerts blocked. You can change this in browser site settings.");
+    } else {
+      showAlert("Browser alerts were not enabled.");
+    }
+  } catch (_) {
+    showAlert("Could not request browser notification permission.");
+  } finally {
+    updateBrowserAlertStatusLabel();
+  }
 }
 
 copyCheckinLinkBtn.addEventListener("click", async () => {
@@ -399,12 +643,71 @@ saveGymSettingsBtn.addEventListener("click", async () => {
       }),
     });
     await loadDashboard();
-    showAlert("Gym settings saved.", "success");
+    showAlert("Business settings saved.", "success");
   } catch (error) {
     showAlert(error.message);
   }
 });
 
-loadDashboard().catch((error) => {
-  showAlert(error.message);
+if (enableBrowserAlertsBtn) {
+  enableBrowserAlertsBtn.addEventListener("click", async () => {
+    await requestBrowserAlertsPermission();
+  });
+}
+
+if (uploadCompanyLogoBtn) {
+  uploadCompanyLogoBtn.addEventListener("click", async () => {
+    hideAlert();
+    const file = companyLogoInput?.files?.[0];
+    if (!file) {
+      showAlert("Choose a logo image first.");
+      return;
+    }
+    uploadCompanyLogoBtn.disabled = true;
+    try {
+      await uploadCompanyLogo(file);
+      if (companyLogoInput) {
+        companyLogoInput.value = "";
+      }
+      await loadDashboard();
+      showAlert("Company logo uploaded. QR sticker layout switched to logo template.", "success");
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      uploadCompanyLogoBtn.disabled = false;
+    }
+  });
+}
+
+if (removeCompanyLogoBtn) {
+  removeCompanyLogoBtn.addEventListener("click", async () => {
+    hideAlert();
+    removeCompanyLogoBtn.disabled = true;
+    try {
+      await removeCompanyLogo();
+      if (companyLogoInput) {
+        companyLogoInput.value = "";
+      }
+      await loadDashboard();
+      showAlert("Company logo removed. QR sticker layout switched to no-logo template.", "success");
+    } catch (error) {
+      showAlert(error.message);
+    } finally {
+      removeCompanyLogoBtn.disabled = false;
+    }
+  });
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  loadDashboard({ silent: true, notifyBrowser: true }).catch(() => {});
 });
+
+updateBrowserAlertStatusLabel();
+loadDashboard()
+  .then(() => {
+    startDashboardPolling();
+  })
+  .catch((error) => {
+    showAlert(error.message);
+  });
