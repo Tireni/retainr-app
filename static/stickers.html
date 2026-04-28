@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Retainr - Members</title>
+  <title>Retainr - Stickers</title>
   <link rel="icon" type="image/png" href="/static/images/logo.png">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
@@ -14,10 +14,10 @@
       <div class="sidebar-section-title">Control Panel</div>
       <nav class="sidebar-nav">
         <a href="/dashboard">Home</a>
-        <a class="active" href="/members">Members</a>
+        <a href="/members">Members</a>
         <a href="/messages">Messages</a>
         <a href="/social-links">Social Links</a>
-        <a href="/stickers">Stickers</a>
+        <a class="active" href="/stickers">Stickers</a>
         <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
         <a href="/settings">Settings</a>
         <a href="#" class="js-admin-logout">Logout</a>
@@ -34,29 +34,28 @@
         </div>
 
         <div class="page-head">
-          <h1>Members to check today</h1>
-          <p class="page-subtitle">Find who needs attention and message them in one click.</p>
+          <h1>Download your check-in sticker</h1>
+          <p class="page-subtitle">Your sticker template is already prepared. Download or print it and place it where members can scan easily.</p>
         </div>
 
-        <div id="members-alert" class="alert error" style="display:none;"></div>
+        <div id="sticker-alert" class="alert error" style="display:none;"></div>
 
         <section class="card">
-          <div class="row space-between mobile-col">
-            <div class="row">
-              <button class="btn-outline active" data-filter="all" type="button">All</button>
-              <button class="btn-outline" data-filter="new" type="button">New</button>
-              <button class="btn-outline" data-filter="recovered" type="button">Recovered</button>
-              <button class="btn-outline" data-filter="lost" type="button">Lost</button>
+          <div class="row mobile-col" style="align-items:flex-start;">
+            <div class="sticker-preview">
+              <img id="sticker-preview-image" alt="Sticker preview">
             </div>
-            <div class="row">
-              <input id="search-input" type="text" placeholder="Search member name or phone">
-              <a class="btn btn-secondary" href="/member-form">Add Member</a>
+            <div class="grow">
+              <h2 id="sticker-business-name" style="margin-bottom:8px;">Business</h2>
+              <p class="muted" style="margin-bottom:6px;">Scan to check in</p>
+              <p style="margin: 0 0 8px;"><strong>CHECK IN HERE</strong></p>
+              <p style="margin: 0 0 16px;"><a id="sticker-checkin-link" href="/my-checkin" target="_blank" rel="noopener">-</a></p>
+              <div class="row">
+                <a id="download-sticker-btn" class="btn" href="/api/checkin/qr/download" download>Download Sticker</a>
+                <button id="print-sticker-btn" class="btn-secondary" type="button">Print Sticker</button>
+              </div>
             </div>
           </div>
-        </section>
-
-        <section>
-          <div id="members-body" class="member-feed"></div>
         </section>
       </div>
     </main>
@@ -65,6 +64,6 @@
   <script src="/static/js/api.js"></script>
   <script src="/static/js/admin-nav.js"></script>
   <script src="/static/js/sidebar.js"></script>
-  <script src="/static/js/members.js"></script>
+  <script src="/static/js/stickers.js"></script>
 </body>
 </html>

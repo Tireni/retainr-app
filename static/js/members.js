@@ -1,14 +1,11 @@
-const tableBody = document.getElementById("members-body");
+﻿const membersBody = document.getElementById("members-body");
 const membersAlert = document.getElementById("members-alert");
 const filterButtons = Array.from(document.querySelectorAll("[data-filter]"));
 const searchInput = document.getElementById("search-input");
-const selectAllCheckbox = document.getElementById("select-all-checkbox");
-const bulkSendBtn = document.getElementById("bulk-send-btn");
 
 let activeFilter = "all";
 let query = "";
 let loadedMembers = [];
-const selectedIds = new Set();
 
 function showMembersAlert(message, type = "error") {
   membersAlert.className = `alert ${type}`;
@@ -20,80 +17,142 @@ function hideMembersAlert() {
   membersAlert.style.display = "none";
 }
 
-function normalizeFilter(filter) {
-  if (filter === "at_risk") return "at risk";
-  return filter;
+function monthKey(value) {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "";
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function setActiveFilterUi() {
-  filterButtons.forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.filter === activeFilter);
+function currentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function isNewMember(member) {
+  return monthKey(member.created_at) === currentMonthKey();
+}
+
+function isRecoveredMember(member) {
+  if (member.status !== "Active") return false;
+  if (isNewMember(member)) return false;
+  if (!member.last_visit) return false;
+  const dt = new Date(member.last_visit);
+  if (Number.isNaN(dt.getTime())) return false;
+  const now = new Date();
+  const days = Math.floor((now.getTime() - dt.getTime()) / 86400000);
+  return days >= 0 && days <= 3;
+}
+
+function memberKind(member) {
+  if (member.status === "Lost") return "lost";
+  if (isRecoveredMember(member)) return "recovered";
+  if (isNewMember(member)) return "new";
+  return "other";
+}
+
+function filterMember(member) {
+  if (query) {
+    const q = query.toLowerCase();
+    if (!String(member.name || "").toLowerCase().includes(q) && !String(member.phone || "").toLowerCase().includes(q)) {
+      return false;
+    }
+  }
+  const kind = memberKind(member);
+  if (activeFilter === "all") {
+    return ["new", "recovered", "lost"].includes(kind) || member.status === "At Risk";
+  }
+  return kind === activeFilter;
+}
+
+function badgeFor(member, kind) {
+  if (kind === "new") return '<span class="badge active">New</span>';
+  if (kind === "recovered") return '<span class="badge active">Recovered</span>';
+  if (kind === "lost") return '<span class="badge lost">Lost</span>';
+  if (member.status === "At Risk") return '<span class="badge at-risk">At Risk</span>';
+  return '<span class="badge active">Active</span>';
+}
+
+function explanationFor(member, kind) {
+  if (kind === "new") return "Joined this month. Send a warm welcome and what to expect next.";
+  if (kind === "recovered") return "Recently active again. Send a thank-you message to keep momentum.";
+  if (kind === "lost") return "No recent check-ins. Send a recovery message before they disengage fully.";
+  if (member.status === "At Risk") return "Activity is dropping. A quick follow-up can bring them back.";
+  return "No immediate action needed.";
+}
+
+function primaryActionFor(member, kind) {
+  if (kind === "new") {
+    return {
+      text: "Send welcome message",
+      payload: { message: `Hi ${member.name.split(" ")[0] || "there"}, welcome to our business. We are excited to have you.` },
+    };
+  }
+  if (kind === "recovered") {
+    return {
+      text: "Send thank you message",
+      payload: { message: `Hi ${member.name.split(" ")[0] || "there"}, welcome back. We are glad to see you again.` },
+    };
+  }
+  if (kind === "lost") {
+    return {
+      text: "Send recovery message",
+      payload: { template_type: "lost" },
+    };
+  }
+  return {
+    text: "Send check-in message",
+    payload: { template_type: "at_risk" },
+  };
+}
+
+async function openWhatsappForMember(memberId, payload) {
+  const res = await Retainr.apiRequest("/messages/link", {
+    method: "POST",
+    body: JSON.stringify({
+      member_id: Number(memberId),
+      ...(payload || { template_type: "status" }),
+    }),
   });
+  if (!res.whatsapp_url) {
+    throw new Error("No WhatsApp URL returned for this member.");
+  }
+  const win = window.open(res.whatsapp_url, "_blank");
+  if (!win) {
+    throw new Error("Popup blocked. Allow popups for this site.");
+  }
 }
 
-function updateSelectAllCheckbox() {
-  if (!loadedMembers.length) {
-    selectAllCheckbox.checked = false;
-    selectAllCheckbox.indeterminate = false;
-    return;
-  }
-  const selectedVisible = loadedMembers.filter((member) => selectedIds.has(member.id)).length;
-  if (selectedVisible === 0) {
-    selectAllCheckbox.checked = false;
-    selectAllCheckbox.indeterminate = false;
-    return;
-  }
-  if (selectedVisible === loadedMembers.length) {
-    selectAllCheckbox.checked = true;
-    selectAllCheckbox.indeterminate = false;
-    return;
-  }
-  selectAllCheckbox.checked = false;
-  selectAllCheckbox.indeterminate = true;
-}
-
-function renderTable(items) {
-  loadedMembers = items;
-  updateSelectAllCheckbox();
-
-  if (!items.length) {
-    tableBody.innerHTML = `
-      <tr>
-        <td colspan="9"><span class="muted">No members found for this filter.</span></td>
-      </tr>
-    `;
+function renderMembers() {
+  const rows = loadedMembers.filter(filterMember);
+  if (!rows.length) {
+    membersBody.innerHTML = '<div class="empty">No members match this filter right now.</div>';
     return;
   }
 
-  tableBody.innerHTML = items
+  membersBody.innerHTML = rows
     .map((member) => {
+      const kind = memberKind(member);
+      const action = primaryActionFor(member, kind);
       return `
-        <tr>
-          <td>
-            <input
-              type="checkbox"
-              data-action="select"
-              data-id="${member.id}"
-              ${selectedIds.has(member.id) ? "checked" : ""}
-              title="Select member"
-            >
-          </td>
-          <td>${Retainr.escapeHtml(member.name)}</td>
-          <td>${Retainr.escapeHtml(member.phone || "-")}</td>
-          <td>${Retainr.formatDate(member.last_visit)}</td>
-          <td>${Retainr.formatDate(member.expiry_date)}</td>
-          <td><span class="badge ${Retainr.statusClass(member.status)}">${Retainr.escapeHtml(member.status)}</span></td>
-          <td>${Retainr.money(member.monthly_fee)}</td>
-          <td>${member.days_inactive == null ? "-" : `${member.days_inactive} days`}</td>
-          <td>
-            <div class="actions">
-              <a class="btn btn-secondary" href="/message?member_id=${member.id}">Message</a>
-              <button data-action="visit" data-id="${member.id}">Mark Visit</button>
-              <a class="btn btn-outline" href="/member-form?id=${member.id}">Edit</a>
-              <button class="btn-danger" data-action="delete" data-id="${member.id}" data-name="${Retainr.escapeHtml(member.name)}">Delete</button>
+        <article class="member-row">
+          <div>
+            <div class="member-meta">
+              <strong>${Retainr.escapeHtml(member.name)}</strong>
+              ${badgeFor(member, kind)}
             </div>
-          </td>
-        </tr>
+            <div class="member-note">${Retainr.escapeHtml(explanationFor(member, kind))}</div>
+          </div>
+          <div class="row">
+            <button
+              type="button"
+              data-action="send-primary"
+              data-id="${member.id}"
+              data-payload="${encodeURIComponent(JSON.stringify(action.payload))}"
+            >${Retainr.escapeHtml(action.text)}</button>
+            <button class="btn-secondary" type="button" data-action="visit" data-id="${member.id}">Mark Visit</button>
+            <button class="btn-danger" type="button" data-action="delete" data-id="${member.id}" data-name="${Retainr.escapeHtml(member.name)}">Delete</button>
+          </div>
+        </article>
       `;
     })
     .join("");
@@ -101,120 +160,65 @@ function renderTable(items) {
 
 async function loadMembers() {
   hideMembersAlert();
-  const params = new URLSearchParams();
-  if (activeFilter !== "all") {
-    params.set("status", normalizeFilter(activeFilter));
-  }
-  if (query) {
-    params.set("q", query);
-  }
   try {
-    const data = await Retainr.apiRequest(`/members?${params.toString()}`);
-    renderTable(data.items || []);
+    const data = await Retainr.apiRequest("/members");
+    loadedMembers = data.items || [];
+    renderMembers();
   } catch (error) {
     showMembersAlert(error.message);
   }
 }
 
-function bulkSendSelectedMembers() {
-  hideMembersAlert();
-  const selectedMembers = loadedMembers.filter((member) => selectedIds.has(member.id));
-  if (!selectedMembers.length) {
-    showMembersAlert("Select at least one visible member before sending.", "error");
-    return;
-  }
-
-  const sendable = selectedMembers.filter((member) => member.whatsapp_url);
-  const skipped = selectedMembers.length - sendable.length;
-  if (!sendable.length) {
-    showMembersAlert("Selected members do not have valid WhatsApp numbers.", "error");
-    return;
-  }
-
-  let opened = 0;
-  sendable.forEach((member, index) => {
-    const timer = 350 * index;
-    window.setTimeout(() => {
-      const win = window.open(member.whatsapp_url, "_blank");
-      if (win) opened += 1;
-      if (index === sendable.length - 1) {
-        const parts = [`Opened ${opened}/${sendable.length} WhatsApp chat(s).`];
-        if (skipped > 0) parts.push(`Skipped ${skipped} without valid numbers.`);
-        if (opened < sendable.length) parts.push("Allow popups for this site to open all chats.");
-        showMembersAlert(parts.join(" "), opened > 0 ? "success" : "error");
-      }
-    }, timer);
-  });
-}
-
 filterButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
-    activeFilter = btn.dataset.filter;
-    setActiveFilterUi();
-    loadMembers();
+    activeFilter = btn.dataset.filter || "all";
+    filterButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    renderMembers();
   });
 });
 
 searchInput.addEventListener("input", () => {
   query = searchInput.value.trim();
-  loadMembers();
+  renderMembers();
 });
 
-selectAllCheckbox.addEventListener("change", () => {
-  if (selectAllCheckbox.checked) {
-    loadedMembers.forEach((member) => selectedIds.add(member.id));
-  } else {
-    loadedMembers.forEach((member) => selectedIds.delete(member.id));
-  }
-  renderTable(loadedMembers);
-});
-
-bulkSendBtn.addEventListener("click", bulkSendSelectedMembers);
-
-tableBody.addEventListener("click", async (event) => {
+membersBody.addEventListener("click", async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   const action = target.dataset.action;
-  const id = target.dataset.id;
+  const id = Number(target.dataset.id || 0);
   if (!action || !id) return;
 
-  const memberId = Number(id);
-  if (!memberId) return;
-
-  if (action === "visit") {
-    try {
-      await Retainr.apiRequest(`/members/${memberId}/mark-visit`, { method: "POST", body: "{}" });
-      await loadMembers();
-    } catch (error) {
-      showMembersAlert(error.message);
+  try {
+    if (action === "send-primary") {
+      let payload = { template_type: "status" };
+      try {
+        payload = JSON.parse(decodeURIComponent(target.dataset.payload || "%7B%7D"));
+      } catch (_) {
+        payload = { template_type: "status" };
+      }
+      await openWhatsappForMember(id, payload);
+      showMembersAlert("WhatsApp opened successfully.", "success");
+      return;
     }
-    return;
-  }
 
-  if (action === "delete") {
-    const name = target.dataset.name || "this member";
-    if (!window.confirm(`Delete ${name}?`)) return;
-    try {
-      await Retainr.apiRequest(`/members/${memberId}`, { method: "DELETE" });
-      selectedIds.delete(memberId);
+    if (action === "visit") {
+      await Retainr.apiRequest(`/members/${id}/mark-visit`, { method: "POST", body: "{}" });
+      await loadMembers();
+      showMembersAlert("Visit marked successfully.", "success");
+      return;
+    }
+
+    if (action === "delete") {
+      const name = target.dataset.name || "this member";
+      if (!window.confirm(`Delete ${name}?`)) return;
+      await Retainr.apiRequest(`/members/${id}`, { method: "DELETE" });
+      await loadMembers();
       showMembersAlert("Member deleted.", "success");
-      await loadMembers();
-    } catch (error) {
-      showMembersAlert(error.message);
     }
+  } catch (error) {
+    showMembersAlert(error.message);
   }
 });
 
-tableBody.addEventListener("change", (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) return;
-  if (target.dataset.action !== "select") return;
-  const memberId = Number(target.dataset.id || 0);
-  if (!memberId) return;
-  if (target.checked) selectedIds.add(memberId);
-  else selectedIds.delete(memberId);
-  updateSelectAllCheckbox();
-});
-
-setActiveFilterUi();
 loadMembers();

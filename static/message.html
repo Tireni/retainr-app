@@ -1,46 +1,60 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Retainr - Message Member</title>
+  <title>Retainr - Send Message</title>
   <link rel="icon" type="image/png" href="/static/images/logo.png">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
-      <div class="logo">Retain<span>r</span></div>
-      <nav class="nav">
-        <a href="/dashboard">Dashboard</a>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand"><div class="logo">Retain<span>r</span></div></div>
+      <div class="sidebar-section-title">Control Panel</div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard">Home</a>
         <a class="active" href="/members">Members</a>
-        <a href="/my-checkin">My Check-In Page</a>
+        <a href="/messages">Messages</a>
+        <a href="/social-links">Social Links</a>
+        <a href="/stickers">Stickers</a>
+        <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
+        <a href="/settings">Settings</a>
         <a href="#" class="js-admin-logout">Logout</a>
       </nav>
-    </div>
-  </header>
+    </aside>
 
-  <main class="container">
-    <h1>Send Message</h1>
-    <p class="page-subtitle">Trigger recovery now and bring inactive members back.</p>
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
 
-    <div id="message-alert" class="alert error" style="display:none;"></div>
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
 
-    <section class="card form-card">
-      <p><strong>Member:</strong> <span id="member-name">-</span></p>
-      <p><strong>Status:</strong> <span id="member-status">-</span></p>
-      <label for="message-box">Message</label>
-      <textarea id="message-box"></textarea>
-      <div class="row" style="margin-top:12px;">
-        <button id="send-btn" type="button">Send via WhatsApp</button>
-        <a class="btn btn-secondary" href="/members">Cancel</a>
+        <h1>Send Message</h1>
+        <p class="page-subtitle">Send a quick WhatsApp message to this member.</p>
+
+        <div id="message-alert" class="alert error" style="display:none;"></div>
+
+        <section class="card form-card">
+          <p><strong>Member:</strong> <span id="member-name">-</span></p>
+          <p><strong>Status:</strong> <span id="member-status">-</span></p>
+          <label for="message-box">Message</label>
+          <textarea id="message-box"></textarea>
+          <div class="row" style="margin-top:12px;">
+            <button id="send-btn" type="button">Send via WhatsApp</button>
+            <a class="btn btn-secondary" href="/members">Cancel</a>
+          </div>
+        </section>
       </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/admin-nav.js"></script>
-  <script src="/static/js/mobile-nav.js"></script>
+  <script src="/static/js/sidebar.js"></script>
   <script src="/static/js/message.js"></script>
 </body>
 </html>

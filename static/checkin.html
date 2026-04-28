@@ -3,33 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Retainr - Business Check-In</title>
+  <title>Retainr - Check In</title>
   <link rel="icon" type="image/png" href="/static/images/logo.png">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
   <main class="container">
-    <div class="logo checkin-logo">Retain<span>r</span></div>
-    <h1 id="checkin-gym-name">Business Check-In</h1>
-    <p class="page-subtitle">Enter your WhatsApp phone number and log today's visit.</p>
-    <p id="checkin-owner-name" class="muted"></p>
+    <div class="checkin-hero">
+      <div class="logo checkin-logo" style="color:#fff; -webkit-text-fill-color:#fff;">Retain<span style="color:#93c5fd;">r</span></div>
+      <h1 id="checkin-gym-name" style="margin-top:6px;">Business Check-In</h1>
+      <p class="page-subtitle" style="margin-top:10px;">Welcome back. Confirm your visit, see today's message, and follow our social pages.</p>
+      <p id="checkin-owner-name" class="muted" style="color:#dbeafe;"></p>
+    </div>
 
     <div id="checkin-alert" class="alert error" style="display:none;"></div>
 
     <div class="checkin-layout">
       <section class="card checkin-step active" id="step-phone">
-        <h2 class="section-title" style="margin-top:0;">Step 1: Enter WhatsApp Number</h2>
+        <h2 class="section-title" style="margin-top:0;">Enter your WhatsApp number</h2>
         <label for="checkin-phone">WhatsApp Phone Number</label>
-        <input id="checkin-phone" placeholder="e.g. 08012345678 (WhatsApp)">
+        <input id="checkin-phone" placeholder="e.g. 08012345678">
         <p class="muted" style="margin-top:8px;">Use the number linked to your WhatsApp account.</p>
         <div class="row" style="margin-top:12px;">
-          <button id="lookup-btn" type="button">Continue</button>
+          <button id="lookup-btn" type="button">Check In Now</button>
         </div>
       </section>
 
       <section class="card checkin-step" id="step-existing">
-        <h2 class="section-title" style="margin-top:0;">Welcome Back</h2>
-        <p><strong id="existing-name">Member</strong>, tap check-in to log today's visit.</p>
+        <h2 class="section-title" style="margin-top:0;">Welcome back</h2>
+        <p><strong id="existing-name">Member</strong>, tap below to confirm your visit now.</p>
         <div class="form-grid">
           <div>
             <label for="existing-purpose">Purpose (optional)</label>
@@ -41,13 +43,13 @@
           </div>
         </div>
         <div class="row" style="margin-top:12px;">
-          <button id="existing-checkin-btn" type="button">Check In</button>
+          <button id="existing-checkin-btn" type="button">Check In Now</button>
           <button id="change-phone-btn" class="btn-secondary" type="button">Use Another Number</button>
         </div>
       </section>
 
       <section class="card checkin-step" id="step-new">
-        <h2 class="section-title" style="margin-top:0;">New Member Registration</h2>
+        <h2 class="section-title" style="margin-top:0;">New customer registration</h2>
         <p class="muted">No member found for this phone. Fill details to register and check in.</p>
         <div class="form-grid">
           <div>
@@ -64,7 +66,7 @@
           </div>
           <div>
             <label for="new-purpose">Purpose (optional)</label>
-            <input id="new-purpose" placeholder="Today focus">
+            <input id="new-purpose" placeholder="Today's focus">
           </div>
           <div>
             <label for="new-time">Preferred Time (optional)</label>
@@ -78,10 +80,14 @@
       </section>
 
       <section class="card checkin-step" id="step-success">
-        <h2 class="section-title" style="margin-top:0;">You're Checked In</h2>
+        <h2 class="section-title" style="margin-top:0;">You're checked in</h2>
         <p id="success-text">Visit recorded successfully.</p>
-        <div>
-          <p class="muted">Connect with this business:</p>
+        <div class="card soft" style="margin-top:10px;">
+          <strong>Today's message</strong>
+          <p id="today-message" class="muted" style="margin:8px 0 0;">Thanks for checking in today.</p>
+        </div>
+        <div style="margin-top:12px;">
+          <p class="muted">Follow us:</p>
           <div id="social-links" class="row"></div>
         </div>
       </section>

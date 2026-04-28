@@ -26,6 +26,7 @@ const newCheckinBtn = document.getElementById("new-checkin-btn");
 const newBackBtn = document.getElementById("new-back-btn");
 
 const successText = document.getElementById("success-text");
+const todayMessageEl = document.getElementById("today-message");
 
 let checkinToken = "";
 let currentPhone = "";
@@ -66,7 +67,7 @@ function renderSocialLinks(socials) {
     ["Instagram", socials.instagram_url],
     ["Facebook", socials.facebook_url],
     ["TikTok", socials.tiktok_url],
-    ["X", socials.x_url],
+    ["WhatsApp", socials.x_url],
     ["Website", socials.website_url],
   ].filter(([, url]) => Boolean(url));
 
@@ -166,6 +167,10 @@ async function submitCheckin(payload, button) {
     });
     const memberName = data.member?.name || "Member";
     successText.textContent = `${memberName}, you're checked in. Have a great session.`;
+    if (todayMessageEl) {
+      const businessName = currentGym?.gym_name || "our business";
+      todayMessageEl.textContent = `Thanks for checking in with ${businessName} today.`;
+    }
     showStep(stepSuccess);
   } catch (error) {
     showAlert(error.message);

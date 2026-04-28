@@ -1,0 +1,78 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Settings</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand"><div class="logo">Retain<span>r</span></div></div>
+      <div class="sidebar-section-title">Control Panel</div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard">Home</a>
+        <a href="/members">Members</a>
+        <a href="/messages">Messages</a>
+        <a href="/social-links">Social Links</a>
+        <a href="/stickers">Stickers</a>
+        <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
+        <a class="active" href="/settings">Settings</a>
+        <a href="#" class="js-admin-logout">Logout</a>
+      </nav>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
+
+        <div class="page-head">
+          <h1>Settings</h1>
+          <p class="page-subtitle">Manage your business details and logo used in check-in stickers.</p>
+        </div>
+
+        <div id="settings-alert" class="alert error" style="display:none;"></div>
+
+        <section class="card form-card">
+          <div class="form-grid">
+            <div>
+              <label for="gym-name-input">Business Name</label>
+              <input id="gym-name-input">
+            </div>
+            <div>
+              <label for="owner-name-input">Owner Name</label>
+              <input id="owner-name-input">
+            </div>
+          </div>
+          <div class="row" style="margin-top:14px;">
+            <button id="save-settings-btn" type="button">Save Settings</button>
+          </div>
+        </section>
+
+        <section class="card form-card" style="margin-top:14px;">
+          <label for="company-logo-input">Company Logo</label>
+          <input id="company-logo-input" type="file" accept="image/*">
+          <div class="muted" style="margin-top:8px;">Used on your check-in sticker template.</div>
+          <img id="company-logo-preview" alt="Company logo preview" style="display:none;margin-top:12px;max-width:140px;max-height:130px;border:1px solid var(--border);border-radius:10px;padding:6px;background:#fff;">
+          <div class="row" style="margin-top:12px;">
+            <button id="upload-company-logo-btn" type="button">Upload Logo</button>
+            <button id="remove-company-logo-btn" class="btn-secondary" type="button">Remove Logo</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/admin-nav.js"></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/settings.js"></script>
+</body>
+</html>

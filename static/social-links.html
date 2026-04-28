@@ -1,0 +1,84 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Social Links</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand"><div class="logo">Retain<span>r</span></div></div>
+      <div class="sidebar-section-title">Control Panel</div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard">Home</a>
+        <a href="/members">Members</a>
+        <a href="/messages">Messages</a>
+        <a class="active" href="/social-links">Social Links</a>
+        <a href="/stickers">Stickers</a>
+        <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
+        <a href="/settings">Settings</a>
+        <a href="#" class="js-admin-logout">Logout</a>
+      </nav>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
+
+        <div class="page-head">
+          <h1>Social media on check-in page</h1>
+          <p class="page-subtitle">Add or update the links customers will see after scanning your check-in sticker.</p>
+        </div>
+
+        <div id="social-alert" class="alert error" style="display:none;"></div>
+
+        <section class="card form-card">
+          <div class="form-grid">
+            <div>
+              <label for="instagram-url-input">Instagram</label>
+              <input id="instagram-url-input" placeholder="https://instagram.com/yourbusiness">
+              <div class="muted">Shown on check-in page</div>
+            </div>
+            <div>
+              <label for="whatsapp-url-input">WhatsApp</label>
+              <input id="whatsapp-url-input" placeholder="https://wa.me/2348000000000">
+              <div class="muted">Shown as contact button</div>
+            </div>
+            <div>
+              <label for="tiktok-url-input">TikTok</label>
+              <input id="tiktok-url-input" placeholder="https://tiktok.com/@yourbusiness">
+              <div class="muted">Shown on check-in page</div>
+            </div>
+            <div>
+              <label for="facebook-url-input">Facebook</label>
+              <input id="facebook-url-input" placeholder="https://facebook.com/yourbusiness">
+              <div class="muted">Shown on check-in page</div>
+            </div>
+            <div>
+              <label for="website-url-input">Website</label>
+              <input id="website-url-input" placeholder="https://yourbusiness.com">
+              <div class="muted">Shown on check-in page</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:14px;">
+            <button id="save-social-links-btn" type="button">Save Social Links</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/admin-nav.js"></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/social-links.js"></script>
+</body>
+</html>

@@ -3,10 +3,6 @@ const formAlert = document.getElementById("form-alert");
 const pageTitle = document.getElementById("form-title");
 const saveBtn = document.getElementById("save-btn");
 
-const params = new URLSearchParams(window.location.search);
-const memberId = Number(params.get("id") || 0);
-const isEdit = memberId > 0;
-
 function showFormAlert(message, type = "error") {
   formAlert.className = `alert ${type}`;
   formAlert.textContent = message;
@@ -28,24 +24,7 @@ function setFieldValue(id, value) {
   field.value = value || "";
 }
 
-async function loadMemberIfEdit() {
-  if (!isEdit) return;
-  pageTitle.textContent = "Edit Member";
-  try {
-    const data = await Retainr.apiRequest(`/members/${memberId}`);
-    const member = data.member;
-    setFieldValue("name", member.name);
-    setFieldValue("phone", member.phone);
-    setFieldValue("monthly_fee", member.monthly_fee);
-    setFieldValue("expiry_date", member.expiry_date);
-    setFieldValue("last_visit", member.last_visit);
-    setFieldValue("goal", member.goal);
-    setFieldValue("purpose", member.purpose);
-    setFieldValue("preferred_time", member.preferred_time);
-  } catch (error) {
-    showFormAlert(error.message);
-  }
-}
+pageTitle.textContent = "Add Member";
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -64,17 +43,10 @@ form.addEventListener("submit", async (event) => {
 
   setFormLoading(true);
   try {
-    if (isEdit) {
-      await Retainr.apiRequest(`/members/${memberId}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await Retainr.apiRequest("/members", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-    }
+    await Retainr.apiRequest("/members", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
     window.location.href = "/members";
   } catch (error) {
     showFormAlert(error.message);
@@ -82,5 +54,3 @@ form.addEventListener("submit", async (event) => {
     setFormLoading(false);
   }
 });
-
-loadMemberIfEdit();

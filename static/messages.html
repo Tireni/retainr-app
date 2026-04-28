@@ -1,0 +1,95 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Messages</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand"><div class="logo">Retain<span>r</span></div></div>
+      <div class="sidebar-section-title">Control Panel</div>
+      <nav class="sidebar-nav">
+        <a href="/dashboard">Home</a>
+        <a href="/members">Members</a>
+        <a class="active" href="/messages">Messages</a>
+        <a href="/social-links">Social Links</a>
+        <a href="/stickers">Stickers</a>
+        <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
+        <a href="/settings">Settings</a>
+        <a href="#" class="js-admin-logout">Logout</a>
+      </nav>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
+
+        <div class="page-head">
+          <h1>Message Templates</h1>
+          <p class="page-subtitle">Edit the messages used for onboarding, recovery, and follow-up.</p>
+        </div>
+
+        <div id="messages-alert" class="alert error" style="display:none;"></div>
+
+        <section class="template-grid">
+          <article class="template-card" data-template-key="welcome">
+            <h3>Welcome Message</h3>
+            <p>Sent to new members so they know what to expect and feel welcomed.</p>
+            <button type="button" data-open-template="welcome">Edit</button>
+          </article>
+          <article class="template-card" data-template-key="recovery">
+            <h3>Recovery Message</h3>
+            <p>Sent when members are inactive and need a nudge to come back.</p>
+            <button type="button" data-open-template="recovery">Edit</button>
+          </article>
+          <article class="template-card" data-template-key="thanks">
+            <h3>Thank You Message</h3>
+            <p>Sent after members return so they feel appreciated and keep engaging.</p>
+            <button type="button" data-open-template="thanks">Edit</button>
+          </article>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="template-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-card">
+      <h2>Edit template</h2>
+      <div class="muted" id="template-modal-kind" style="margin-top:4px;"></div>
+      <div class="form-grid" style="margin-top:12px;">
+        <div>
+          <label for="template-name-input">Template name</label>
+          <input id="template-name-input" />
+        </div>
+        <div>
+          <label for="template-purpose-input">What this message is for</label>
+          <textarea id="template-purpose-input"></textarea>
+        </div>
+      </div>
+      <div style="margin-top:10px;">
+        <label for="template-message-input">Message text</label>
+        <textarea id="template-message-input"></textarea>
+      </div>
+      <div class="muted" style="margin-top:8px;">Tip: use {{name}} where the member's name should appear.</div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="template-cancel-btn">Cancel</button>
+        <button type="button" id="template-save-btn">Save Template</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/admin-nav.js"></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/messages-page.js"></script>
+</body>
+</html>

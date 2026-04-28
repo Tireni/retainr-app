@@ -131,6 +131,10 @@
       display: inline-block;
       transform-origin: top left;
       user-select: none;
+      border: 2px dashed transparent;
+    }
+    .stage.selected {
+      border-color: #94a3b8;
     }
     .stage img.bg {
       display: block;
@@ -155,22 +159,30 @@
       display: block;
       pointer-events: none;
     }
-    .handle {
+    .resize-handle,
+    .stage-resize-handle {
       position: absolute;
       width: 12px;
       height: 12px;
       background: var(--brand);
       border: 2px solid #fff;
       border-radius: 50%;
-      right: -7px;
-      bottom: -7px;
-      cursor: nwse-resize;
       display: none;
       pointer-events: auto;
+      z-index: 8;
     }
-    .layer.selected .handle {
+    .layer.selected .resize-handle,
+    .stage.selected .stage-resize-handle {
       display: block;
     }
+    .resize-handle[data-dir="nw"], .stage-resize-handle[data-dir="nw"] { left: -7px; top: -7px; cursor: nwse-resize; }
+    .resize-handle[data-dir="n"], .stage-resize-handle[data-dir="n"] { left: 50%; top: -7px; transform: translateX(-50%); cursor: ns-resize; }
+    .resize-handle[data-dir="ne"], .stage-resize-handle[data-dir="ne"] { right: -7px; top: -7px; cursor: nesw-resize; }
+    .resize-handle[data-dir="e"], .stage-resize-handle[data-dir="e"] { right: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+    .resize-handle[data-dir="se"], .stage-resize-handle[data-dir="se"] { right: -7px; bottom: -7px; cursor: nwse-resize; }
+    .resize-handle[data-dir="s"], .stage-resize-handle[data-dir="s"] { left: 50%; bottom: -7px; transform: translateX(-50%); cursor: ns-resize; }
+    .resize-handle[data-dir="sw"], .stage-resize-handle[data-dir="sw"] { left: -7px; bottom: -7px; cursor: nesw-resize; }
+    .resize-handle[data-dir="w"], .stage-resize-handle[data-dir="w"] { left: -7px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
     .pill {
       display: inline-block;
       margin-top: 6px;
@@ -205,11 +217,26 @@
         <input id="qrInput" type="file" accept="image/*">
         <label>Company Logo (optional)</label>
         <input id="logoInput" type="file" accept="image/*">
-        <div class="pill" id="stageSizePill">Stage: 0 x 0</div>
+        <div class="pill" id="stageSizePill">Background: 0 x 0</div>
       </div>
 
       <div class="group">
         <h2>2. View Controls</h2>
+        <div class="row">
+          <div>
+            <label>Sticker Background Width</label>
+            <input id="stageWInput" type="number" min="1" step="1">
+          </div>
+          <div>
+            <label>Sticker Background Height</label>
+            <input id="stageHInput" type="number" min="1" step="1">
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button id="applyStageSizeBtn" type="button">Apply Background Size</button>
+          <button id="resetStageToBgBtn" type="button">Reset to Original Image</button>
+        </div>
+        <div class="muted" style="margin-top:6px;">Tip: press Enter in width/height fields to apply instantly.</div>
         <label>Zoom</label>
         <input id="zoomRange" type="range" min="20" max="200" value="100">
         <div class="row">
@@ -222,6 +249,7 @@
         <h2>3. Edit Layer</h2>
         <label>Layer</label>
         <select id="layerSelect">
+          <option value="stage">Stage</option>
           <option value="qr">QR</option>
           <option value="logo">Logo</option>
         </select>
@@ -275,12 +303,34 @@
           <img class="bg" id="bgImg" alt="">
           <div class="layer" id="qrLayer" data-layer="qr" hidden>
             <img id="qrImg" alt="QR">
-            <div class="handle" data-handle="resize"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="nw"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="n"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="ne"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="e"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="se"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="s"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="sw"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="w"></div>
           </div>
           <div class="layer" id="logoLayer" data-layer="logo" hidden>
             <img id="logoImg" alt="Logo">
-            <div class="handle" data-handle="resize"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="nw"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="n"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="ne"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="e"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="se"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="s"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="sw"></div>
+            <div class="resize-handle" data-handle="resize" data-dir="w"></div>
           </div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="nw"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="n"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="ne"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="e"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="se"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="s"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="sw"></div>
+          <div class="stage-resize-handle" data-stage-handle="1" data-dir="w"></div>
         </div>
       </div>
     </section>
@@ -316,13 +366,19 @@
       const downloadPreviewBtn = document.getElementById("downloadPreviewBtn");
       const jsonOutput = document.getElementById("jsonOutput");
       const stageSizePill = document.getElementById("stageSizePill");
+      const stageWInput = document.getElementById("stageWInput");
+      const stageHInput = document.getElementById("stageHInput");
+      const applyStageSizeBtn = document.getElementById("applyStageSizeBtn");
+      const resetStageToBgBtn = document.getElementById("resetStageToBgBtn");
 
       const state = {
         stageW: 0,
         stageH: 0,
-        selected: "qr",
+        selected: "stage",
         dragging: null,
         resizing: null,
+        resizeDir: "",
+        resizingStage: false,
         startX: 0,
         startY: 0,
         base: null,
@@ -331,7 +387,11 @@
       function px(n) { return `${Math.round(n)}px`; }
       function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
       function round4(n) { return Math.round(n * 10000) / 10000; }
-      function selectedLayerEl() { return state.selected === "logo" ? logoLayer : qrLayer; }
+      function selectedLayerEl() {
+        if (state.selected === "logo") return logoLayer;
+        if (state.selected === "qr") return qrLayer;
+        return null;
+      }
 
       function getRect(el) {
         return {
@@ -359,13 +419,24 @@
 
       function refreshLayerInputs() {
         const el = selectedLayerEl();
-        const r = getRect(el);
-        xInput.value = Math.round(r.x);
-        yInput.value = Math.round(r.y);
-        wInput.value = Math.round(r.w);
-        hInput.value = Math.round(r.h);
+        const isStage = state.selected === "stage";
+        if (isStage) {
+          xInput.value = "0";
+          yInput.value = "0";
+          wInput.value = String(Math.round(state.stageW || 0));
+          hInput.value = String(Math.round(state.stageH || 0));
+        } else if (el) {
+          const r = getRect(el);
+          xInput.value = String(Math.round(r.x));
+          yInput.value = String(Math.round(r.y));
+          wInput.value = String(Math.round(r.w));
+          hInput.value = String(Math.round(r.h));
+        }
+        xInput.disabled = isStage;
+        yInput.disabled = isStage;
         [qrLayer, logoLayer].forEach((layer) => layer.classList.remove("selected"));
-        el.classList.add("selected");
+        stage.classList.toggle("selected", isStage);
+        if (!isStage && el) el.classList.add("selected");
       }
 
       function ensureLayerDefault(el, imgEl) {
@@ -386,14 +457,79 @@
       }
 
       function updateStageSize(w, h) {
-        state.stageW = w;
-        state.stageH = h;
-        stage.style.width = px(w);
-        stage.style.height = px(h);
-        stageSizePill.textContent = `Stage: ${w} x ${h}`;
+        const nextW = Math.max(1, Math.round(w || 0));
+        const nextH = Math.max(1, Math.round(h || 0));
+        state.stageW = nextW;
+        state.stageH = nextH;
+        stage.style.width = px(nextW);
+        stage.style.height = px(nextH);
+        stageSizePill.textContent = `Background: ${nextW} x ${nextH}`;
+        if (stageWInput) stageWInput.value = String(nextW);
+        if (stageHInput) stageHInput.value = String(nextH);
         ensureLayerDefault(qrLayer, qrImg);
         ensureLayerDefault(logoLayer, logoImg);
         refreshLayerInputs();
+      }
+
+      function resizeRectFromHandle(base, dx, dy, dir, maxW, maxH) {
+        let x = base.x;
+        let y = base.y;
+        let w = base.w;
+        let h = base.h;
+
+        if (dir.includes("e")) w = base.w + dx;
+        if (dir.includes("s")) h = base.h + dy;
+        if (dir.includes("w")) { w = base.w - dx; x = base.x + dx; }
+        if (dir.includes("n")) { h = base.h - dy; y = base.y + dy; }
+
+        const minW = 10;
+        const minH = 10;
+
+        if (w < minW) {
+          if (dir.includes("w")) x -= (minW - w);
+          w = minW;
+        }
+        if (h < minH) {
+          if (dir.includes("n")) y -= (minH - h);
+          h = minH;
+        }
+
+        if (x < 0) {
+          if (dir.includes("w")) w += x;
+          x = 0;
+        }
+        if (y < 0) {
+          if (dir.includes("n")) h += y;
+          y = 0;
+        }
+        if (x + w > maxW) {
+          if (dir.includes("e")) w = maxW - x;
+          else x = maxW - w;
+        }
+        if (y + h > maxH) {
+          if (dir.includes("s")) h = maxH - y;
+          else y = maxH - h;
+        }
+
+        w = clamp(w, minW, maxW);
+        h = clamp(h, minH, maxH);
+        x = clamp(x, 0, Math.max(0, maxW - w));
+        y = clamp(y, 0, Math.max(0, maxH - h));
+
+        return { x, y, w, h, z: base.z };
+      }
+
+      function resizeStageFromHandle(base, dx, dy, dir) {
+        let w = base.w;
+        let h = base.h;
+        if (dir.includes("e")) w = base.w + dx;
+        if (dir.includes("s")) h = base.h + dy;
+        if (dir.includes("w")) w = base.w - dx;
+        if (dir.includes("n")) h = base.h - dy;
+        return {
+          w: clamp(Math.round(w), 50, 5000),
+          h: clamp(Math.round(h), 50, 5000),
+        };
       }
 
       function readFileAsDataUrl(file, cb) {
@@ -420,6 +556,7 @@
         layer.addEventListener("pointerdown", (event) => {
           const target = event.target;
           const isResize = target instanceof HTMLElement && target.dataset.handle === "resize";
+          const dir = isResize && target instanceof HTMLElement ? String(target.dataset.dir || "se") : "";
           state.selected = layer.dataset.layer || "qr";
           layerSelect.value = state.selected;
           refreshLayerInputs();
@@ -430,6 +567,8 @@
           state.base = r;
           state.dragging = isResize ? null : layer;
           state.resizing = isResize ? layer : null;
+          state.resizeDir = dir;
+          state.resizingStage = false;
           layer.setPointerCapture(event.pointerId);
           event.preventDefault();
         });
@@ -449,13 +588,15 @@
             });
             refreshLayerInputs();
           } else if (state.resizing === layer) {
-            setRect(layer, {
-              x: state.base.x,
-              y: state.base.y,
-              w: state.base.w + dx,
-              h: state.base.h + dy,
-              z: state.base.z,
-            });
+            const next = resizeRectFromHandle(
+              state.base,
+              dx,
+              dy,
+              state.resizeDir || "se",
+              state.stageW,
+              state.stageH
+            );
+            setRect(layer, next);
             refreshLayerInputs();
           }
         });
@@ -463,10 +604,47 @@
         const clearPointer = () => {
           state.dragging = null;
           state.resizing = null;
+          state.resizeDir = "";
+          state.resizingStage = false;
           state.base = null;
         };
         layer.addEventListener("pointerup", clearPointer);
         layer.addEventListener("pointercancel", clearPointer);
+      }
+
+      function bindStageHandles() {
+        const handles = stage.querySelectorAll("[data-stage-handle]");
+        handles.forEach((handle) => {
+          handle.addEventListener("pointerdown", (event) => {
+            const dir = String(handle.getAttribute("data-dir") || "se");
+            state.selected = "stage";
+            layerSelect.value = "stage";
+            refreshLayerInputs();
+            state.startX = event.clientX;
+            state.startY = event.clientY;
+            state.base = { w: state.stageW, h: state.stageH, x: 0, y: 0, z: 0 };
+            state.resizingStage = true;
+            state.resizeDir = dir;
+            handle.setPointerCapture(event.pointerId);
+            event.preventDefault();
+          });
+
+          handle.addEventListener("pointermove", (event) => {
+            if (!state.resizingStage || !state.base) return;
+            const dx = event.clientX - state.startX;
+            const dy = event.clientY - state.startY;
+            const next = resizeStageFromHandle(state.base, dx, dy, state.resizeDir || "se");
+            updateStageSize(next.w, next.h);
+          });
+
+          const clearStagePointer = () => {
+            state.resizingStage = false;
+            state.resizeDir = "";
+            state.base = null;
+          };
+          handle.addEventListener("pointerup", clearStagePointer);
+          handle.addEventListener("pointercancel", clearStagePointer);
+        });
       }
 
       function buildJson() {
@@ -534,6 +712,11 @@
         const file = logoInput.files && logoInput.files[0];
         if (!file) {
           logoLayer.hidden = true;
+          if (state.selected === "logo") {
+            state.selected = "stage";
+            layerSelect.value = "stage";
+            refreshLayerInputs();
+          }
           return;
         }
         readFileAsDataUrl(file, (url) => {
@@ -555,15 +738,58 @@
         applyZoom(100);
       });
 
+      function applyBackgroundSizeFromInputs() {
+        const nextW = parseInt(stageWInput.value || "0", 10);
+        const nextH = parseInt(stageHInput.value || "0", 10);
+        if (!nextW || !nextH) return;
+        updateStageSize(nextW, nextH);
+        fitWidth();
+      }
+
+      applyStageSizeBtn.addEventListener("click", applyBackgroundSizeFromInputs);
+      resetStageToBgBtn.addEventListener("click", () => {
+        if (!bgImg.naturalWidth || !bgImg.naturalHeight) return;
+        updateStageSize(bgImg.naturalWidth, bgImg.naturalHeight);
+        fitWidth();
+      });
+      [stageWInput, stageHInput].forEach((input) => {
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            applyBackgroundSizeFromInputs();
+          }
+        });
+        input.addEventListener("change", applyBackgroundSizeFromInputs);
+      });
+
       layerSelect.addEventListener("change", () => {
-        state.selected = layerSelect.value === "logo" ? "logo" : "qr";
+        const selected = layerSelect.value;
+        if (selected === "logo" && logoLayer.hidden) {
+          state.selected = "stage";
+          layerSelect.value = "stage";
+        } else if (selected === "qr" && qrLayer.hidden) {
+          state.selected = "stage";
+          layerSelect.value = "stage";
+        } else if (selected === "stage" || selected === "logo" || selected === "qr") {
+          state.selected = selected;
+        } else {
+          state.selected = "stage";
+          layerSelect.value = "stage";
+        }
         refreshLayerInputs();
       });
 
       [xInput, yInput, wInput, hInput].forEach((input) => {
         input.addEventListener("change", () => {
+          if (state.selected === "stage") {
+            const nextW = parseFloat(wInput.value || "0");
+            const nextH = parseFloat(hInput.value || "0");
+            if (!nextW || !nextH) return;
+            updateStageSize(nextW, nextH);
+            return;
+          }
           const el = selectedLayerEl();
-          if (el.hidden) return;
+          if (!el || el.hidden) return;
           setRect(el, {
             ...getRect(el),
             x: parseFloat(xInput.value || "0"),
@@ -577,7 +803,7 @@
 
       centerHBtn.addEventListener("click", () => {
         const el = selectedLayerEl();
-        if (el.hidden) return;
+        if (!el || el.hidden) return;
         const r = getRect(el);
         setRect(el, { ...r, x: (state.stageW - r.w) / 2 });
         refreshLayerInputs();
@@ -585,7 +811,7 @@
 
       centerVBtn.addEventListener("click", () => {
         const el = selectedLayerEl();
-        if (el.hidden) return;
+        if (!el || el.hidden) return;
         const r = getRect(el);
         setRect(el, { ...r, y: (state.stageH - r.h) / 2 });
         refreshLayerInputs();
@@ -593,7 +819,7 @@
 
       bringFrontBtn.addEventListener("click", () => {
         const el = selectedLayerEl();
-        if (el.hidden) return;
+        if (!el || el.hidden) return;
         el.style.zIndex = "5";
         (el === qrLayer ? logoLayer : qrLayer).style.zIndex = "2";
         refreshLayerInputs();
@@ -601,7 +827,7 @@
 
       sendBackBtn.addEventListener("click", () => {
         const el = selectedLayerEl();
-        if (el.hidden) return;
+        if (!el || el.hidden) return;
         el.style.zIndex = "2";
         (el === qrLayer ? logoLayer : qrLayer).style.zIndex = "5";
         refreshLayerInputs();
@@ -663,6 +889,7 @@
 
       bindLayerDrag(qrLayer);
       bindLayerDrag(logoLayer);
+      bindStageHandles();
       refreshLayerInputs();
     })();
   </script>

@@ -1,225 +1,96 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Retainr - Dashboard</title>
+  <title>Retainr - Home</title>
   <link rel="icon" type="image/png" href="/static/images/logo.png">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="container">
-      <div class="logo">Retain<span>r</span></div>
-      <nav class="nav">
-        <a class="active" href="/dashboard">Dashboard</a>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand">
+        <div class="logo">Retain<span>r</span></div>
+      </div>
+      <div class="sidebar-section-title">Control Panel</div>
+      <nav class="sidebar-nav">
+        <a class="active" href="/dashboard">Home</a>
         <a href="/members">Members</a>
-        <a href="/my-checkin">My Check-In Page</a>
-        <a href="#notifications-section" id="nav-notification-link" class="nav-notification-link" aria-label="Notifications">
-          Notifications
-          <span id="nav-notification-count" class="nav-notification-count" hidden>0</span>
-        </a>
+        <a href="/messages">Messages</a>
+        <a href="/social-links">Social Links</a>
+        <a href="/stickers">Stickers</a>
+        <a href="/my-checkin" target="_blank" rel="noopener">Check In</a>
+        <a href="/settings">Settings</a>
         <a href="#" class="js-admin-logout">Logout</a>
       </nav>
-    </div>
-  </header>
+    </aside>
 
-  <main class="container">
-    <h1 id="gym-heading">Dashboard</h1>
-    <p class="page-subtitle">Find lost members, bring them back, and protect business revenue.</p>
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
 
-    <div id="dashboard-alert" class="alert error" style="display:none;"></div>
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
 
-    <section class="card-grid">
-      <article class="card">
-        <div class="stat-label">Total Members</div>
-        <div class="stat-value" id="stat-total">0</div>
-      </article>
-      <article class="card">
-        <div class="stat-label">Active Members</div>
-        <div class="stat-value" id="stat-active">0</div>
-      </article>
-      <article class="card">
-        <div class="stat-label">At Risk Members</div>
-        <div class="stat-value" id="stat-risk">0</div>
-      </article>
-      <article class="card">
-        <div class="stat-label">Lost Members</div>
-        <div class="stat-value" id="stat-lost">0</div>
-      </article>
-      <article class="card">
-        <div class="stat-label">Today's Check-Ins</div>
-        <div class="stat-value" id="stat-checkins">0</div>
-      </article>
-    </section>
+        <div class="page-head">
+          <h1 id="gym-heading">Home</h1>
+          <p class="page-subtitle">See what needs attention and take action fast.</p>
+        </div>
 
-    <section>
-      <h2 class="section-title">Business Check-In Link</h2>
-      <div class="card">
-        <div class="row mobile-col">
-          <div class="qr-box">
-            <img id="checkin-qr-image" alt="Check-in QR code">
-          </div>
-          <div class="grow">
-            <p class="muted">Show this QR at your front desk so members can self check-in.</p>
-            <p><strong>Link:</strong> <a id="checkin-url-link" href="/my-checkin">-</a></p>
+        <div id="dashboard-alert" class="alert error" style="display:none;"></div>
+
+        <section class="card-grid">
+          <article class="card">
+            <div class="stat-label">New Members</div>
+            <div class="stat-value" id="stat-new-members">0</div>
+            <div class="stat-helper">People who joined this month</div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Recovered</div>
+            <div class="stat-value" id="stat-recovered-members" style="color:#0f172a;">0</div>
+            <div class="stat-helper">Inactive members who came back</div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Lost</div>
+            <div class="stat-value" id="stat-lost-members">0</div>
+            <div class="stat-helper">Members who stopped checking in</div>
+          </article>
+        </section>
+
+        <section>
+          <div class="row space-between">
+            <h2 class="section-title">Members to check today</h2>
             <div class="row">
-              <button id="copy-checkin-link-btn" type="button">Copy Link</button>
-              <a class="btn btn-secondary" id="open-checkin-link-btn" href="/my-checkin" target="_blank" rel="noopener">Open Link</a>
-              <a class="btn btn-secondary" id="download-checkin-qr-btn" href="/api/checkin/qr/download" download>Download QR Sticker</a>
+              <button class="btn-outline active" data-home-filter="all" type="button">All</button>
+              <button class="btn-outline" data-home-filter="new" type="button">New</button>
+              <button class="btn-outline" data-home-filter="recovered" type="button">Recovered</button>
+              <button class="btn-outline" data-home-filter="lost" type="button">Lost</button>
             </div>
           </div>
-        </div>
+          <div id="home-members-feed" class="member-feed"></div>
+        </section>
+
+        <section id="notifications-section">
+          <div class="row space-between">
+            <h2 class="section-title">Notifications</h2>
+            <div class="row">
+              <span id="browser-alert-status" class="muted">Browser Alerts: Not Enabled</span>
+              <button id="enable-browser-alerts-btn" class="btn-secondary" type="button">Enable Browser Alerts</button>
+              <button id="mark-notifications-read-btn" class="btn-secondary" type="button">Mark All Read</button>
+            </div>
+          </div>
+          <div id="notification-list" class="notification-list"></div>
+        </section>
       </div>
-    </section>
-
-    <section id="notifications-section">
-      <div class="row space-between">
-        <h2 class="section-title" style="margin-bottom:0;">Notifications</h2>
-        <div class="row">
-          <span id="browser-alert-status" class="muted">Browser Alerts: Not Enabled</span>
-          <button id="enable-browser-alerts-btn" class="btn btn-secondary" type="button">Enable Browser Alerts</button>
-          <button id="mark-notifications-read-btn" class="btn btn-secondary" type="button">Mark All Read</button>
-        </div>
-      </div>
-      <div id="notification-list" class="notification-list"></div>
-    </section>
-
-    <section>
-      <h2 class="section-title">Quick Message Center</h2>
-      <div class="card">
-        <div class="form-grid">
-          <div>
-            <label for="message-member-select">Member</label>
-            <select id="message-member-select"></select>
-          </div>
-          <div>
-            <label for="message-template-select">Message Type</label>
-            <select id="message-template-select">
-              <option value="status">Based on Status</option>
-              <option value="at_risk">At Risk Template</option>
-              <option value="lost">Lost Template</option>
-              <option value="promo">Promotion Template</option>
-              <option value="custom">Custom Message</option>
-            </select>
-          </div>
-        </div>
-        <label for="quick-message-box" style="margin-top:10px;">Message</label>
-        <textarea id="quick-message-box" placeholder="Message preview..."></textarea>
-        <div class="row" style="margin-top:12px;">
-          <button id="compose-template-btn" class="btn btn-secondary" type="button">Refresh from Template</button>
-          <button id="send-quick-message-btn" type="button">Send via WhatsApp</button>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2 class="section-title">Attention Needed</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Days Inactive</th>
-            <th>Monthly Fee</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="attention-body"></tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2 class="section-title">Recent Check-Ins</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Member</th>
-            <th>Time</th>
-            <th>Source</th>
-            <th>Purpose</th>
-          </tr>
-        </thead>
-        <tbody id="checkins-body"></tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2 class="section-title">Message Templates</h2>
-      <div class="card">
-        <div class="form-grid">
-          <div>
-            <label for="at-risk-template">At Risk Template</label>
-            <textarea id="at-risk-template"></textarea>
-          </div>
-          <div>
-            <label for="lost-template">Lost Template</label>
-            <textarea id="lost-template"></textarea>
-          </div>
-          <div>
-            <label for="promo-template">Promotion Template</label>
-            <textarea id="promo-template"></textarea>
-          </div>
-        </div>
-        <div class="row" style="margin-top:12px;">
-          <button id="save-templates-btn" type="button">Save Templates</button>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2 class="section-title">Business Profile & Social Links</h2>
-      <div class="card">
-        <div class="form-grid">
-          <div>
-            <label for="gym-name-input">Business Name</label>
-            <input id="gym-name-input">
-          </div>
-          <div>
-            <label for="owner-name-input">Owner Name</label>
-            <input id="owner-name-input">
-          </div>
-          <div>
-            <label for="instagram-url-input">Instagram URL</label>
-            <input id="instagram-url-input" placeholder="https://instagram.com/yourbusiness">
-          </div>
-          <div>
-            <label for="facebook-url-input">Facebook URL</label>
-            <input id="facebook-url-input" placeholder="https://facebook.com/yourbusiness">
-          </div>
-          <div>
-            <label for="tiktok-url-input">TikTok URL</label>
-            <input id="tiktok-url-input" placeholder="https://tiktok.com/@yourbusiness">
-          </div>
-          <div>
-            <label for="x-url-input">X URL</label>
-            <input id="x-url-input" placeholder="https://x.com/yourbusiness">
-          </div>
-          <div>
-            <label for="website-url-input">Website URL</label>
-            <input id="website-url-input" placeholder="https://yourbusiness.com">
-          </div>
-        </div>
-        <div style="margin-top:12px;">
-          <label for="company-logo-input">Company Logo (used on QR sticker)</label>
-          <input id="company-logo-input" type="file" accept="image/*">
-          <div class="row" style="margin-top:8px;">
-            <button id="upload-company-logo-btn" type="button">Upload Logo</button>
-            <button id="remove-company-logo-btn" class="btn btn-secondary" type="button">Remove Logo</button>
-          </div>
-          <div class="muted" style="margin-top:8px;">When logo is uploaded, QR sticker uses <code>logoab.png</code> layout; otherwise it uses <code>qrab.png</code>.</div>
-          <img id="company-logo-preview" alt="Company logo preview" style="display:none;margin-top:10px;max-width:124px;max-height:118px;border:1px solid var(--border);border-radius:10px;padding:6px;background:#fff;">
-        </div>
-        <div class="row" style="margin-top:12px;">
-          <button id="save-gym-settings-btn" type="button">Save Business Settings</button>
-        </div>
-      </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
   <script src="/static/js/api.js"></script>
   <script src="/static/js/admin-nav.js"></script>
-  <script src="/static/js/mobile-nav.js"></script>
+  <script src="/static/js/sidebar.js"></script>
   <script src="/static/js/dashboard.js"></script>
 </body>
 </html>

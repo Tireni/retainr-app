@@ -17,7 +17,14 @@ from zoneinfo import ZoneInfo
 
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+
+try:
+    import qrcode
+    from qrcode.constants import ERROR_CORRECT_H
+except Exception:  # pragma: no cover - fallback path if dependency is unavailable
+    qrcode = None
+    ERROR_CORRECT_H = None
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,20 +35,41 @@ DEFAULT_AT_RISK_TEMPLATE = "Hey {name}, we haven't seen you in a few days. We'd 
 DEFAULT_LOST_TEMPLATE = "Hey {name}, you've been away for a while. We'd love to welcome you back this week."
 DEFAULT_PROMO_TEMPLATE = "Hi {name}, we have a special offer running this week. Come in and take advantage."
 
-CHECKIN_STICKER_BG_WITH_LOGO = os.path.join(STATIC_DIR, "images", "logoab.png")
-CHECKIN_STICKER_BG_NO_LOGO = os.path.join(STATIC_DIR, "images", "qrab.png")
+CHECKIN_STICKER_BG_PRIMARY = os.path.join(STATIC_DIR, "images", "retainrimage.png")
+CHECKIN_STICKER_BG_FALLBACK = os.path.join(STATIC_DIR, "images", "retainimage.png")
 GYM_LOGO_UPLOAD_DIR = os.path.join(STATIC_DIR, "uploads", "gym_logos")
 RESAMPLING = getattr(Image, "Resampling", Image)
+QR_DARK_NAVY = (2, 11, 45, 255)  # #020b2d
+QR_ELECTRIC_BLUE = (18, 102, 255, 255)  # #1266FF
 
-CHECKIN_LAYOUT_WITH_LOGO = {
-    "canvas": {"width": 500, "height": 700},
-    "qr": {"x": 78, "y": 156, "width": 299, "height": 302},
-    "logo": {"x": 2, "y": 3, "width": 124, "height": 118},
-}
+STICKER_CANVAS_W = 1080
+STICKER_CANVAS_H = 1350
+STICKER_BRAND_TOP = 70
+STICKER_BRAND_QR_GAP = 70
+STICKER_FRAME_SIZE = 800
+STICKER_FRAME_BORDER = 10
+STICKER_FRAME_RADIUS = 42
+STICKER_FRAME_PADDING = 28
+STICKER_QR_SIZE = 720
+STICKER_QR_TO_CTA_GAP = 130
+STICKER_SCAN_BOTTOM_MARGIN = 90
+STICKER_SCAN_LINE_W = 140
+STICKER_SCAN_LINE_H = 5
+STICKER_SCAN_GAP = 28
 
-CHECKIN_LAYOUT_NO_LOGO = {
-    "canvas": {"width": 500, "height": 700},
-    "qr": {"x": 90, "y": 155, "width": 271, "height": 275},
+STICKER_FONT_CANDIDATES = [
+    os.path.join(STATIC_DIR, "fonts", "Poppins-ExtraBold.ttf"),
+    os.path.join(STATIC_DIR, "fonts", "Gilroy-ExtraBold.ttf"),
+    os.path.join(STATIC_DIR, "fonts", "Inter-ExtraBold.ttf"),
+    os.path.join(BASE_DIR, "assets", "fonts", "Poppins-ExtraBold.ttf"),
+    os.path.join(BASE_DIR, "assets", "fonts", "Gilroy-ExtraBold.ttf"),
+    os.path.join(BASE_DIR, "assets", "fonts", "Inter-ExtraBold.ttf"),
+    "C:/Windows/Fonts/arialbd.ttf",
+]
+
+CHECKIN_LAYOUT = {
+    "canvas": {"width": 1080, "height": 1600},
+    "qr": {"x": 220, "y": 244, "width": 640, "height": 640},
     "logo": None,
 }
 
@@ -280,7 +308,164 @@ def remove_managed_logo_file(path: str | None) -> None:
             pass
 
 
+def resolve_checkin_sticker_background() -> str | None:
+    for candidate in (CHECKIN_STICKER_BG_PRIMARY, CHECKIN_STICKER_BG_FALLBACK):
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def load_sticker_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    for font_path in STICKER_FONT_CANDIDATES:
+        if os.path.isfile(font_path):
+            try:
+                return ImageFont.truetype(font_path, size=size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def text_dimensions(font: ImageFont.ImageFont, text: str) -> tuple[int, int]:
+    if not text:
+        return (0, 0)
+    try:
+        x0, y0, x1, y1 = font.getbbox(text)
+        return (max(0, int(x1 - x0)), max(0, int(y1 - y0)))
+    except Exception:
+        width = int(font.getlength(text)) if hasattr(font, "getlength") else (len(text) * 10)
+        return (max(0, width), int(getattr(font, "size", 16)))
+
+
+def tracked_text_width(font: ImageFont.ImageFont, text: str, tracking: int = 0) -> int:
+    if not text:
+        return 0
+    total = 0
+    for idx, ch in enumerate(text):
+        ch_w, _ = text_dimensions(font, ch)
+        total += ch_w
+        if idx < len(text) - 1:
+            total += tracking
+    return max(0, total)
+
+
+def draw_tracked_text(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: tuple[int, int, int, int],
+    tracking: int = 0,
+) -> int:
+    cursor_x = int(x)
+    for idx, ch in enumerate(text):
+        draw.text((cursor_x, y), ch, font=font, fill=fill)
+        ch_w, _ = text_dimensions(font, ch)
+        cursor_x += ch_w
+        if idx < len(text) - 1:
+            cursor_x += tracking
+    return cursor_x
+
+
+def _draw_rounded_finder(
+    draw: ImageDraw.ImageDraw,
+    anchor_x: int,
+    anchor_y: int,
+    module_px: int,
+    inset: int,
+    dark: tuple[int, int, int, int],
+) -> None:
+    # 7x7 outer finder, 5x5 white center, 3x3 dark center.
+    x0 = anchor_x * module_px
+    y0 = anchor_y * module_px
+    x1 = x0 + (7 * module_px)
+    y1 = y0 + (7 * module_px)
+    outer_radius = max(4, int(module_px * 1.8))
+    draw.rounded_rectangle(
+        (x0 + inset, y0 + inset, x1 - inset, y1 - inset),
+        radius=outer_radius,
+        fill=dark,
+    )
+
+    i1x0 = (anchor_x + 1) * module_px
+    i1y0 = (anchor_y + 1) * module_px
+    i1x1 = i1x0 + (5 * module_px)
+    i1y1 = i1y0 + (5 * module_px)
+    inner_white_radius = max(3, int(module_px * 1.35))
+    draw.rounded_rectangle(
+        (i1x0 + inset, i1y0 + inset, i1x1 - inset, i1y1 - inset),
+        radius=inner_white_radius,
+        fill=(255, 255, 255, 255),
+    )
+
+    i2x0 = (anchor_x + 2) * module_px
+    i2y0 = (anchor_y + 2) * module_px
+    i2x1 = i2x0 + (3 * module_px)
+    i2y1 = i2y0 + (3 * module_px)
+    inner_dark_radius = max(3, int(module_px * 1.0))
+    draw.rounded_rectangle(
+        (i2x0 + inset, i2y0 + inset, i2x1 - inset, i2y1 - inset),
+        radius=inner_dark_radius,
+        fill=dark,
+    )
+
+
 def fetch_qr_png(checkin_link: str, size: int = 1000) -> Image.Image:
+    # Preferred local generator: rounded modules, navy color, H correction, quiet zone >= 4 modules.
+    if qrcode is not None and ERROR_CORRECT_H is not None:
+        qr_obj = qrcode.QRCode(
+            error_correction=ERROR_CORRECT_H,
+            border=4,
+            box_size=10,
+        )
+        qr_obj.add_data(checkin_link)
+        qr_obj.make(fit=True)
+        matrix = qr_obj.get_matrix()
+        modules = len(matrix)
+        module_px = max(1, int(size // modules))
+        canvas_size = modules * module_px
+        inset = max(0, int(module_px * 0.04))
+        module_radius = max(2, int((module_px - (2 * inset)) * 0.24))
+
+        image = Image.new("RGBA", (canvas_size, canvas_size), (255, 255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        dark = QR_DARK_NAVY
+
+        border = int(getattr(qr_obj, "border", 4) or 4)
+        finder_anchors = [
+            (border, border),
+            (modules - border - 7, border),
+            (border, modules - border - 7),
+        ]
+        finder_cells: set[tuple[int, int]] = set()
+        for ax, ay in finder_anchors:
+            for yy in range(7):
+                for xx in range(7):
+                    finder_cells.add((ax + xx, ay + yy))
+
+        for y, row in enumerate(matrix):
+            for x, enabled in enumerate(row):
+                if not enabled or (x, y) in finder_cells:
+                    continue
+                px = x * module_px
+                py = y * module_px
+                draw.rounded_rectangle(
+                    (
+                        px + inset,
+                        py + inset,
+                        px + module_px - inset,
+                        py + module_px - inset,
+                    ),
+                    radius=module_radius,
+                    fill=dark,
+                )
+
+        for ax, ay in finder_anchors:
+            _draw_rounded_finder(draw, ax, ay, module_px, inset, dark)
+
+        return image
+
+    # Fallback path if qrcode dependency is unavailable in runtime env.
     qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=" + str(size) + "x" + str(size) + "&data=" + quote_plus(checkin_link)
     with urlopen(qr_url, timeout=15) as response:
         binary = response.read()
@@ -288,43 +473,76 @@ def fetch_qr_png(checkin_link: str, size: int = 1000) -> Image.Image:
 
 
 def render_checkin_sticker_binary(gym_row: dict[str, Any], checkin_link: str) -> bytes:
-    logo_path = gym_logo_abs_path(gym_row)
-    with_logo = logo_path is not None
-    layout = CHECKIN_LAYOUT_WITH_LOGO if with_logo else CHECKIN_LAYOUT_NO_LOGO
-    bg_path = CHECKIN_STICKER_BG_WITH_LOGO if with_logo else CHECKIN_STICKER_BG_NO_LOGO
+    del gym_row
+    canvas_w = STICKER_CANVAS_W
+    canvas_h = STICKER_CANVAS_H
+    canvas = Image.new("RGBA", (canvas_w, canvas_h), (255, 255, 255, 255))
+    draw = ImageDraw.Draw(canvas)
 
-    canvas_w = int(layout["canvas"]["width"])
-    canvas_h = int(layout["canvas"]["height"])
-    qr_box = layout["qr"]
+    brand_font = load_sticker_font(88)
+    scan_font = load_sticker_font(70)
+    brand_tracking = -2
+    scan_tracking = 1
 
-    if os.path.isfile(bg_path):
-        canvas = Image.open(bg_path).convert("RGBA").resize((canvas_w, canvas_h), RESAMPLING.LANCZOS)
-    else:
-        canvas = Image.new("RGBA", (canvas_w, canvas_h), (255, 255, 255, 255))
+    brand_left = "Retain"
+    brand_right = "r"
+    brand_h = text_dimensions(brand_font, "Retainr")[1]
+    brand_total_w = tracked_text_width(brand_font, "Retainr", brand_tracking)
+    brand_x = (canvas_w - brand_total_w) // 2
+    brand_y = STICKER_BRAND_TOP
 
-    qr_img = fetch_qr_png(checkin_link, size=1200).resize(
-        (int(qr_box["width"]), int(qr_box["height"])),
-        RESAMPLING.LANCZOS,
+    next_x = draw_tracked_text(draw, brand_x, brand_y, brand_left, brand_font, QR_DARK_NAVY, brand_tracking)
+    next_x += brand_tracking
+    draw_tracked_text(draw, next_x, brand_y, brand_right, brand_font, QR_ELECTRIC_BLUE, brand_tracking)
+
+    frame_x = (canvas_w - STICKER_FRAME_SIZE) // 2
+    frame_y = brand_y + brand_h + STICKER_BRAND_QR_GAP
+    frame_x2 = frame_x + STICKER_FRAME_SIZE
+    frame_y2 = frame_y + STICKER_FRAME_SIZE
+
+    draw.rounded_rectangle(
+        (frame_x, frame_y, frame_x2, frame_y2),
+        radius=STICKER_FRAME_RADIUS,
+        fill=(255, 255, 255, 255),
+        outline=QR_DARK_NAVY,
+        width=STICKER_FRAME_BORDER,
     )
-    canvas.alpha_composite(qr_img, (int(qr_box["x"]), int(qr_box["y"])))
 
-    if with_logo and layout.get("logo"):
-        logo_box = layout["logo"]
-        logo_img = Image.open(str(logo_path)).convert("RGBA")
-        bounded_logo = ImageOps.contain(
-            logo_img,
-            (int(logo_box["width"]), int(logo_box["height"])),
-            RESAMPLING.LANCZOS,
-        )
-        logo_slot = Image.new("RGBA", (int(logo_box["width"]), int(logo_box["height"])), (0, 0, 0, 0))
-        logo_slot.alpha_composite(
-            bounded_logo,
-            (
-                (int(logo_box["width"]) - bounded_logo.width) // 2,
-                (int(logo_box["height"]) - bounded_logo.height) // 2,
-            ),
-        )
-        canvas.alpha_composite(logo_slot, (int(logo_box["x"]), int(logo_box["y"])))
+    qr_inner_x = frame_x + STICKER_FRAME_BORDER + STICKER_FRAME_PADDING
+    qr_inner_y = frame_y + STICKER_FRAME_BORDER + STICKER_FRAME_PADDING
+    qr_inner_size = STICKER_FRAME_SIZE - (2 * (STICKER_FRAME_BORDER + STICKER_FRAME_PADDING))
+
+    qr_img = fetch_qr_png(checkin_link, size=1400)
+    qr_fit = ImageOps.contain(qr_img, (STICKER_QR_SIZE, STICKER_QR_SIZE), RESAMPLING.LANCZOS)
+    qr_target_x = qr_inner_x + max(0, (qr_inner_size - qr_fit.width) // 2)
+    qr_target_y = qr_inner_y + max(0, (qr_inner_size - qr_fit.height) // 2)
+    canvas.alpha_composite(qr_fit, (int(qr_target_x), int(qr_target_y)))
+
+    scan_text = "SCAN ME"
+    scan_w = tracked_text_width(scan_font, scan_text, scan_tracking)
+    scan_h = text_dimensions(scan_font, scan_text)[1]
+    scan_y = frame_y2 + STICKER_QR_TO_CTA_GAP
+    max_scan_y = canvas_h - STICKER_SCAN_BOTTOM_MARGIN - scan_h
+    if scan_y > max_scan_y:
+        scan_y = max_scan_y
+
+    row_total_w = STICKER_SCAN_LINE_W + STICKER_SCAN_GAP + scan_w + STICKER_SCAN_GAP + STICKER_SCAN_LINE_W
+    row_x = (canvas_w - row_total_w) // 2
+    line_y = scan_y + (scan_h - STICKER_SCAN_LINE_H) // 2
+
+    draw.rounded_rectangle(
+        (row_x, line_y, row_x + STICKER_SCAN_LINE_W, line_y + STICKER_SCAN_LINE_H),
+        radius=999,
+        fill=QR_ELECTRIC_BLUE,
+    )
+    text_x = row_x + STICKER_SCAN_LINE_W + STICKER_SCAN_GAP
+    draw_tracked_text(draw, text_x, scan_y, scan_text, scan_font, QR_DARK_NAVY, scan_tracking)
+    right_line_x = text_x + scan_w + STICKER_SCAN_GAP
+    draw.rounded_rectangle(
+        (right_line_x, line_y, right_line_x + STICKER_SCAN_LINE_W, line_y + STICKER_SCAN_LINE_H),
+        radius=999,
+        fill=QR_ELECTRIC_BLUE,
+    )
 
     out = BytesIO()
     canvas.save(out, format="PNG")
@@ -570,7 +788,17 @@ def is_public_path(path: str) -> bool:
 
 
 def is_protected_path(path: str) -> bool:
-    if path in {"/dashboard", "/members", "/member-form", "/message", "/my-checkin"}:
+    if path in {
+        "/dashboard",
+        "/members",
+        "/member-form",
+        "/message",
+        "/messages",
+        "/social-links",
+        "/stickers",
+        "/settings",
+        "/my-checkin",
+    }:
         return True
     if path.startswith("/api/") and not is_public_path(path):
         return True
@@ -818,6 +1046,26 @@ def member_form_page() -> Any:
 @app.get("/message")
 def message_page() -> Any:
     return send_from_directory(STATIC_DIR, "message.html")
+
+
+@app.get("/messages")
+def messages_page() -> Any:
+    return send_from_directory(STATIC_DIR, "messages.html")
+
+
+@app.get("/social-links")
+def social_links_page() -> Any:
+    return send_from_directory(STATIC_DIR, "social-links.html")
+
+
+@app.get("/stickers")
+def stickers_page() -> Any:
+    return send_from_directory(STATIC_DIR, "stickers.html")
+
+
+@app.get("/settings")
+def settings_page() -> Any:
+    return send_from_directory(STATIC_DIR, "settings.html")
 
 
 @app.get("/my-checkin")
