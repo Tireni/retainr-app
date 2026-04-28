@@ -64,6 +64,14 @@ STICKER_FONT_CANDIDATES = [
     os.path.join(BASE_DIR, "assets", "fonts", "Poppins-ExtraBold.ttf"),
     os.path.join(BASE_DIR, "assets", "fonts", "Gilroy-ExtraBold.ttf"),
     os.path.join(BASE_DIR, "assets", "fonts", "Inter-ExtraBold.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "DejaVuSans-Bold.ttf",
+    "DejaVuSans.ttf",
+    "LiberationSans-Bold.ttf",
+    "Arial Bold.ttf",
     "C:/Windows/Fonts/arialbd.ttf",
 ]
 
@@ -317,11 +325,16 @@ def resolve_checkin_sticker_background() -> str | None:
 
 def load_sticker_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for font_path in STICKER_FONT_CANDIDATES:
-        if os.path.isfile(font_path):
-            try:
+        try:
+            if os.path.isfile(font_path) or ("/" not in font_path and "\\" not in font_path):
                 return ImageFont.truetype(font_path, size=size)
-            except OSError:
-                continue
+        except OSError:
+            continue
+    try:
+        # Pillow usually ships with this on Linux containers; keeps sizing consistent.
+        return ImageFont.truetype("DejaVuSans-Bold.ttf", size=size)
+    except OSError:
+        pass
     return ImageFont.load_default()
 
 
