@@ -2,17 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="refresh" content="0; url=/login">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Retainr - Redirecting</title>
+  <title>Retainr - Admin Login</title>
   <link rel="icon" type="image/png" href="/static/images/logo.png">
   <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
   <main class="container auth-wrap">
     <div class="logo auth-logo">Retain<span>r</span></div>
-    <p class="page-subtitle">Redirecting to login...</p>
-    <a class="btn" href="/login">Continue</a>
+    <h1>Platform Admin</h1>
+    <p class="page-subtitle">Sign in to monitor all businesses, members, recoveries, losses, and platform activity.</p>
+    <div id="admin-login-alert" class="alert error" style="display:none;"></div>
+    <section class="card form-card" style="max-width:560px;">
+      <form id="admin-login-form" class="form-grid" style="grid-template-columns:1fr;">
+        <div>
+          <label for="admin-email">Admin Email</label>
+          <input id="admin-email" type="email" required autocomplete="username">
+        </div>
+        <div>
+          <label for="admin-password">Password</label>
+          <input id="admin-password" type="password" required autocomplete="current-password">
+        </div>
+        <div class="row">
+          <button id="admin-login-btn" class="btn" type="submit">Sign In</button>
+          <a class="btn btn-outline" href="/login">Business Login</a>
+        </div>
+      </form>
+    </section>
   </main>
+  <script src="/static/js/admin-login.js"></script>
 </body>
 </html>

@@ -446,6 +446,24 @@ tr:last-child td {
   background: #fee2e2;
 }
 
+.badge.neutral {
+  color: #1f2937;
+  background: #e5e7eb;
+}
+
+.admin-chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  min-height: 260px;
+}
+
+.admin-chart-wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .notification-list {
   display: grid;
   gap: 10px;

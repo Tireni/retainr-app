@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retainr - Platform Admin</title>
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar">
+      <div class="app-brand"><div class="logo">Retain<span>r</span></div></div>
+      <div class="sidebar-section-title">Platform</div>
+      <nav class="sidebar-nav">
+        <a class="active" href="/admin">Admin Dashboard</a>
+        <a href="#" id="admin-logout-link">Logout</a>
+      </nav>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
+    <main class="app-main">
+      <div class="container">
+        <div class="mobile-header">
+          <div class="logo">Retain<span>r</span></div>
+          <button class="sidebar-toggle" data-sidebar-toggle aria-label="Open menu">☰</button>
+        </div>
+
+        <div class="page-head row space-between">
+          <div>
+            <h1>Platform Activity Monitor</h1>
+            <p class="page-subtitle">Track business signups, member recovery/loss trends, and platform visits.</p>
+          </div>
+          <div class="row">
+            <button class="btn btn-outline active" data-range="week">Week</button>
+            <button class="btn btn-outline" data-range="month">Month</button>
+            <button class="btn btn-outline" data-range="year">Year</button>
+          </div>
+        </div>
+
+        <div id="admin-alert" class="alert error" style="display:none;"></div>
+
+        <section class="card-grid">
+          <article class="card">
+            <div class="stat-label">Businesses Signed Up</div>
+            <div class="stat-value" id="kpi-businesses-total">0</div>
+            <div class="stat-helper" id="kpi-businesses-sub">Week: 0 • Month: 0 • Year: 0</div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Members</div>
+            <div class="stat-value" id="kpi-members-total">0</div>
+            <div class="stat-helper" id="kpi-members-sub">Active: 0 • At Risk: 0 • Lost: 0</div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Recovered Members</div>
+            <div class="stat-value" id="kpi-recovered">0</div>
+            <div class="stat-helper">Members that returned after inactivity.</div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Platform Visits</div>
+            <div class="stat-value" id="kpi-visits">0</div>
+            <div class="stat-helper" id="kpi-visits-sub">Unique: 0 • In Range: 0</div>
+          </article>
+        </section>
+
+        <h2 class="section-title">Trends & Charts</h2>
+        <section class="card-grid">
+          <article class="card">
+            <div class="stat-label">Daily Business Signups (30d)</div>
+            <div class="admin-chart-wrap">
+              <canvas id="chart-signups-daily"></canvas>
+            </div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Monthly Business Growth (12m)</div>
+            <div class="admin-chart-wrap">
+              <canvas id="chart-signups-monthly"></canvas>
+            </div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Member Status Split</div>
+            <div class="admin-chart-wrap">
+              <canvas id="chart-member-split"></canvas>
+            </div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Visits Trend (30d)</div>
+            <div class="admin-chart-wrap">
+              <canvas id="chart-visits-daily"></canvas>
+            </div>
+          </article>
+          <article class="card">
+            <div class="stat-label">Operations Radar</div>
+            <div class="admin-chart-wrap">
+              <canvas id="chart-ops-radar"></canvas>
+            </div>
+          </article>
+        </section>
+
+        <h2 class="section-title">Businesses</h2>
+        <section class="card">
+          <div class="row space-between">
+            <div class="stat-helper">Click a business to see members, recovered, and lost details.</div>
+          </div>
+          <div style="overflow:auto; margin-top:10px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Business</th>
+                  <th>Signed Up</th>
+                  <th>Total Members</th>
+                  <th>Recovered</th>
+                  <th>Lost</th>
+                  <th>Range: New Members</th>
+                  <th>Range: Check-ins</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="companies-tbody">
+                <tr><td colspan="8" class="muted">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card" id="company-detail-card" style="display:none;">
+          <h3 id="company-detail-title">Company details</h3>
+          <p class="page-subtitle" id="company-detail-sub"></p>
+          <div class="row" id="company-detail-summary"></div>
+          <div style="overflow:auto; margin-top:10px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Recovered</th>
+                  <th>Last Visit</th>
+                  <th>Expiry</th>
+                </tr>
+              </thead>
+              <tbody id="company-members-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/admin-dashboard.js"></script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import json
 import os
 import re
@@ -93,6 +94,10 @@ sqlite3.register_adapter(Decimal, lambda d: float(d))
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
 app.secret_key = os.getenv("SECRET_KEY", "retainr-dev-secret-change-me")
 
+ADMIN_EMAIL = os.getenv("RETAINR_ADMIN_EMAIL", "enochbenson3342@gmail.com").strip().lower()
+ADMIN_PASSWORD = os.getenv("RETAINR_ADMIN_PASSWORD", "Enoch@0330").strip()
+SAFE_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 def lagos_now() -> datetime:
     return datetime.now(LAGOS_TZ)
@@ -144,7 +149,18 @@ class DictCursor:
         return sql.replace("%s", "?")
 
     def execute(self, sql: str, params: tuple[Any, ...] | list[Any] | None = None) -> "DictCursor":
+        # Guardrail: keep SQL statement execution deterministic and parameterized.
+        if not isinstance(sql, str) or not sql.strip():
+            raise ValueError("SQL must be a non-empty string.")
         sql_adapted = self._adapt_sql(sql)
+        placeholder_count = sql_adapted.count("?")
+        if params is None and placeholder_count > 0:
+            raise ValueError("SQL placeholders were provided without parameters.")
+        if params is not None:
+            if not isinstance(params, (tuple, list)):
+                raise ValueError("SQL params must be a tuple or list.")
+            if placeholder_count != len(params):
+                raise ValueError("SQL placeholder count does not match params length.")
         if params is None:
             self._cursor.execute(sql_adapted)
         else:
@@ -178,6 +194,13 @@ def safe_exec(cursor: DictCursor, sql: str, params: tuple[Any, ...] | None = Non
             cursor.execute(sql, params)
     except sqlite3.Error:
         pass
+
+
+def quote_sql_identifier(name: str) -> str:
+    raw = str(name or "").strip()
+    if not SAFE_SQL_IDENTIFIER_RE.match(raw):
+        raise ValueError(f"Unsafe SQL identifier: {raw!r}")
+    return '"' + raw + '"'
 
 
 def clean_phone(phone: str) -> str:
@@ -603,7 +626,8 @@ def gym_socials(gym_row: dict[str, Any]) -> dict[str, str | None]:
 
 def init_database() -> None:
     def has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
-        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        safe_table = quote_sql_identifier(table)
+        rows = conn.execute(f"PRAGMA table_info({safe_table})").fetchall()
         return any(str(r["name"]) == column for r in rows)
 
     with db_connection() as conn:
@@ -679,6 +703,22 @@ def init_database() -> None:
                     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
                     FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS platform_visits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    visit_token TEXT DEFAULT NULL,
+                    gym_id INTEGER DEFAULT NULL,
+                    path TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    request_kind TEXT NOT NULL DEFAULT 'PAGE',
+                    ip_address TEXT DEFAULT NULL,
+                    user_agent TEXT DEFAULT NULL,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE SET NULL
                 )
                 """
             )
@@ -760,6 +800,9 @@ def init_database() -> None:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_read ON gym_notifications(is_read)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_notif_created ON gym_notifications(created_at)")
             cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_members_gym_phone ON members(gym_id, phone_normalized)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_visits_created ON platform_visits(created_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_visits_token ON platform_visits(visit_token)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_visits_kind ON platform_visits(request_kind)")
         conn.commit()
 
 
@@ -777,6 +820,82 @@ def current_gym_id() -> int | None:
 
 def is_authenticated() -> bool:
     return current_gym_id() is not None
+
+
+def is_admin_authenticated() -> bool:
+    return bool(session.get("retainr_admin_auth") is True)
+
+
+def ensure_visit_token() -> str:
+    token = str(session.get("retainr_visit_token") or "").strip()
+    if token:
+        return token
+    token = secrets.token_urlsafe(18)
+    session["retainr_visit_token"] = token
+    return token
+
+
+def parse_datetime_value(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def should_track_visit(path: str) -> bool:
+    if not path or path.startswith("/static/"):
+        return False
+    if path == "/favicon.ico":
+        return False
+    return True
+
+
+def request_kind_for_path(path: str) -> str:
+    return "API" if path.startswith("/api/") else "PAGE"
+
+
+def log_platform_visit() -> None:
+    path = request.path or "/"
+    if not should_track_visit(path):
+        return
+    visit_token = ensure_visit_token()
+    gym_id = current_gym_id()
+    method = (request.method or "GET").upper()
+    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr)
+    user_agent = (request.user_agent.string if request.user_agent else "") or ""
+    kind = request_kind_for_path(path)
+    with db_connection() as conn:
+        with db_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO platform_visits
+                (visit_token, gym_id, path, method, request_kind, ip_address, user_agent, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (visit_token, gym_id, path, method, kind, ip_address, user_agent[:500], lagos_now_naive()),
+            )
+        conn.commit()
+
+
+def is_admin_public_path(path: str) -> bool:
+    return path in {"/admin-login", "/api/admin/auth/login", "/api/admin/auth/logout"}
+
+
+def is_admin_protected_path(path: str) -> bool:
+    if path == "/admin":
+        return True
+    if path.startswith("/api/admin/") and not is_admin_public_path(path):
+        return True
+    return False
 
 
 def is_public_path(path: str) -> bool:
@@ -1002,9 +1121,63 @@ def member_to_dict(member_row: dict[str, Any], templates: dict[str, str]) -> dic
     }
 
 
+def period_bounds(range_key: str) -> tuple[date, date, str]:
+    today = lagos_today()
+    key = (range_key or "").strip().lower()
+    if key == "week":
+        return (today - timedelta(days=6), today, "week")
+    if key == "year":
+        return (date(today.year, 1, 1), today, "year")
+    start_month = date(today.year, today.month, 1)
+    return (start_month, today, "month")
+
+
+def recovered_member_ids(
+    members_rows: list[dict[str, Any]],
+    checkin_rows: list[dict[str, Any]],
+) -> set[int]:
+    checkins_by_member: dict[int, list[datetime]] = defaultdict(list)
+    for row in checkin_rows:
+        try:
+            mid = int(row.get("member_id") or 0)
+        except (TypeError, ValueError):
+            continue
+        dt = parse_datetime_value(row.get("checkin_at"))
+        if mid > 0 and dt is not None:
+            checkins_by_member[mid].append(dt)
+
+    recovered: set[int] = set()
+    for member in members_rows:
+        member_id = int(member.get("id") or 0)
+        if member_id <= 0:
+            continue
+        status = status_engine(to_date(member.get("last_visit")), to_date(member.get("expiry_date")))
+        if status != "Active":
+            continue
+        checkins = sorted(checkins_by_member.get(member_id) or [])
+        if len(checkins) < 2:
+            continue
+        if (checkins[-1].date() - checkins[-2].date()).days >= 7:
+            recovered.add(member_id)
+    return recovered
+
+
 @app.before_request
 def enforce_auth() -> Any:
     path = request.path or "/"
+    try:
+        log_platform_visit()
+    except Exception:
+        pass
+    if is_admin_public_path(path):
+        return None
+    if is_admin_protected_path(path):
+        if is_admin_authenticated():
+            return None
+        if path.startswith("/api/"):
+            return jsonify({"ok": False, "error": "Unauthorized admin request."}), 401
+        next_url = request.full_path if request.query_string else path
+        return redirect("/admin-login?next=" + quote_plus(next_url))
     if is_public_path(path):
         return None
     if not is_protected_path(path):
@@ -1037,8 +1210,15 @@ def register_page() -> Any:
 
 
 @app.get("/admin-login")
-def legacy_admin_login_redirect() -> Any:
-    return redirect("/login")
+def admin_login_page() -> Any:
+    if is_admin_authenticated():
+        return redirect("/admin")
+    return send_from_directory(STATIC_DIR, "admin-login.html")
+
+
+@app.get("/admin")
+def admin_dashboard_page() -> Any:
+    return send_from_directory(STATIC_DIR, "admin-dashboard.html")
 
 
 @app.get("/dashboard")
@@ -1167,6 +1347,306 @@ def api_auth_logout() -> Any:
     session.pop("retainr_gym_id", None)
     session.pop("retainr_gym_name", None)
     return jsonify({"ok": True})
+
+
+@app.post("/api/admin/auth/login")
+def api_admin_auth_login() -> Any:
+    payload = request.get_json(silent=True) or {}
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    next_url = str(payload.get("next") or "/admin").strip() or "/admin"
+    if not next_url.startswith("/") or next_url.startswith("//") or next_url.startswith("/api/"):
+        next_url = "/admin"
+
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        return jsonify({"ok": False, "error": "Admin access is not configured."}), 503
+
+    ok_email = secrets.compare_digest(email, ADMIN_EMAIL)
+    ok_password = secrets.compare_digest(password, ADMIN_PASSWORD)
+    if not (ok_email and ok_password):
+        return jsonify({"ok": False, "error": "Invalid admin credentials."}), 401
+
+    session["retainr_admin_auth"] = True
+    session["retainr_admin_email"] = ADMIN_EMAIL
+    return jsonify({"ok": True, "next": next_url})
+
+
+@app.post("/api/admin/auth/logout")
+def api_admin_auth_logout() -> Any:
+    session.pop("retainr_admin_auth", None)
+    session.pop("retainr_admin_email", None)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/overview")
+def api_admin_overview() -> Any:
+    if not is_admin_authenticated():
+        return jsonify({"ok": False, "error": "Unauthorized admin request."}), 401
+
+    start_date, end_date, resolved_range = period_bounds(str(request.args.get("range") or "month"))
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date, datetime.max.time().replace(microsecond=0))
+    today = lagos_today()
+
+    with db_connection() as conn:
+        with db_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM gyms ORDER BY created_at DESC")
+            gyms_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM members ORDER BY created_at DESC")
+            members_rows = cursor.fetchall()
+            cursor.execute("SELECT gym_id, member_id, checkin_at FROM member_checkins ORDER BY checkin_at DESC")
+            checkins_rows = cursor.fetchall()
+            cursor.execute("SELECT request_kind, path, created_at, visit_token FROM platform_visits ORDER BY created_at DESC")
+            visits_rows = cursor.fetchall()
+
+    recovered_ids = recovered_member_ids(members_rows, checkins_rows)
+
+    members_by_gym: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in members_rows:
+        gid = int(row.get("gym_id") or 0)
+        if gid > 0:
+            members_by_gym[gid].append(row)
+
+    checkins_by_gym: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    checkins_by_member: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in checkins_rows:
+        gid = int(row.get("gym_id") or 0)
+        mid = int(row.get("member_id") or 0)
+        if gid > 0:
+            checkins_by_gym[gid].append(row)
+        if mid > 0:
+            checkins_by_member[mid].append(row)
+
+    visit_days: dict[str, int] = {}
+    visit_unique_days: dict[str, set[str]] = defaultdict(set)
+    for row in visits_rows:
+        dt = parse_datetime_value(row.get("created_at"))
+        if dt is None:
+            continue
+        day_key = dt.date().isoformat()
+        visit_days[day_key] = visit_days.get(day_key, 0) + 1
+        token = str(row.get("visit_token") or "").strip()
+        if token:
+            visit_unique_days[day_key].add(token)
+
+    total_members = len(members_rows)
+    total_active = 0
+    total_at_risk = 0
+    total_lost = 0
+    for member in members_rows:
+        status = status_engine(to_date(member.get("last_visit")), to_date(member.get("expiry_date")))
+        if status == "Active":
+            total_active += 1
+        elif status == "At Risk":
+            total_at_risk += 1
+        else:
+            total_lost += 1
+
+    weekly_signups = 0
+    monthly_signups = 0
+    yearly_signups = 0
+    for gym in gyms_rows:
+        created_dt = parse_datetime_value(gym.get("created_at"))
+        if created_dt is None:
+            continue
+        created_day = created_dt.date()
+        if created_day >= today - timedelta(days=6):
+            weekly_signups += 1
+        if created_day >= date(today.year, today.month, 1):
+            monthly_signups += 1
+        if created_day >= date(today.year, 1, 1):
+            yearly_signups += 1
+
+    company_cards: list[dict[str, Any]] = []
+    for gym in gyms_rows:
+        gid = int(gym["id"])
+        gym_members = members_by_gym.get(gid, [])
+        active_count = 0
+        at_risk_count = 0
+        lost_count = 0
+        recovered_count = 0
+        new_members_in_period = 0
+        for member in gym_members:
+            member_id = int(member["id"])
+            member_status = status_engine(to_date(member.get("last_visit")), to_date(member.get("expiry_date")))
+            if member_status == "Active":
+                active_count += 1
+            elif member_status == "At Risk":
+                at_risk_count += 1
+            else:
+                lost_count += 1
+            if member_id in recovered_ids:
+                recovered_count += 1
+            m_created = parse_datetime_value(member.get("created_at"))
+            if m_created and start_dt.date() <= m_created.date() <= end_dt.date():
+                new_members_in_period += 1
+        checkins_period = 0
+        for checkin in checkins_by_gym.get(gid, []):
+            c_dt = parse_datetime_value(checkin.get("checkin_at"))
+            if c_dt and start_dt <= c_dt <= end_dt:
+                checkins_period += 1
+        company_cards.append(
+            {
+                "id": gid,
+                "gym_name": str(gym.get("gym_name") or ""),
+                "owner_name": gym.get("owner_name"),
+                "email": gym.get("email"),
+                "created_at": to_iso(gym.get("created_at")),
+                "members_total": len(gym_members),
+                "members_active": active_count,
+                "members_at_risk": at_risk_count,
+                "members_lost": lost_count,
+                "members_recovered": recovered_count,
+                "new_members_period": new_members_in_period,
+                "checkins_period": checkins_period,
+                "checkins_total": len(checkins_by_gym.get(gid, [])),
+            }
+        )
+
+    daily_signups: dict[str, int] = {}
+    for i in range(29, -1, -1):
+        d = today - timedelta(days=i)
+        daily_signups[d.isoformat()] = 0
+    for gym in gyms_rows:
+        created_dt = parse_datetime_value(gym.get("created_at"))
+        if created_dt is None:
+            continue
+        day_key = created_dt.date().isoformat()
+        if day_key in daily_signups:
+            daily_signups[day_key] += 1
+
+    monthly_signups_trend: dict[str, int] = {}
+    for i in range(11, -1, -1):
+        m = (today.month - i - 1) % 12 + 1
+        y = today.year + ((today.month - i - 1) // 12)
+        key = f"{y:04d}-{m:02d}"
+        monthly_signups_trend[key] = 0
+    for gym in gyms_rows:
+        created_dt = parse_datetime_value(gym.get("created_at"))
+        if created_dt is None:
+            continue
+        key = created_dt.strftime("%Y-%m")
+        if key in monthly_signups_trend:
+            monthly_signups_trend[key] += 1
+
+    # Visits totals and range-specific totals
+    page_visits = [v for v in visits_rows if str(v.get("request_kind") or "").upper() == "PAGE"]
+    total_visits = len(page_visits)
+    total_unique_visits = len({str(v.get("visit_token") or "") for v in page_visits if str(v.get("visit_token") or "").strip()})
+    period_visits = 0
+    period_unique_tokens: set[str] = set()
+    for visit in page_visits:
+        v_dt = parse_datetime_value(visit.get("created_at"))
+        if v_dt is None:
+            continue
+        if start_dt <= v_dt <= end_dt:
+            period_visits += 1
+            v_token = str(visit.get("visit_token") or "").strip()
+            if v_token:
+                period_unique_tokens.add(v_token)
+
+    visits_daily = []
+    for day_key in sorted(daily_signups.keys()):
+        visits_daily.append(
+            {
+                "day": day_key,
+                "visits": int(visit_days.get(day_key, 0)),
+                "unique": len(visit_unique_days.get(day_key, set())),
+            }
+        )
+
+    company_cards.sort(key=lambda row: row["created_at"] or "", reverse=True)
+
+    return jsonify(
+        {
+            "ok": True,
+            "range": resolved_range,
+            "period": {"start": start_date.isoformat(), "end": end_date.isoformat()},
+            "kpis": {
+                "businesses_total": len(gyms_rows),
+                "businesses_week": weekly_signups,
+                "businesses_month": monthly_signups,
+                "businesses_year": yearly_signups,
+                "members_total": total_members,
+                "members_active": total_active,
+                "members_at_risk": total_at_risk,
+                "members_lost": total_lost,
+                "members_recovered": len(recovered_ids),
+                "visits_total": total_visits,
+                "visits_unique_total": total_unique_visits,
+                "visits_period": period_visits,
+                "visits_unique_period": len(period_unique_tokens),
+            },
+            "charts": {
+                "daily_signups": [{"day": day, "count": cnt} for day, cnt in daily_signups.items()],
+                "monthly_signups": [{"month": month, "count": cnt} for month, cnt in monthly_signups_trend.items()],
+                "member_status_split": {
+                    "labels": ["Active", "At Risk", "Lost"],
+                    "values": [total_active, total_at_risk, total_lost],
+                },
+                "visits_daily": visits_daily,
+                "ops_radar": {
+                    "labels": ["Businesses", "Members", "Recovered", "Lost", "Checkins", "Visits"],
+                    "values": [
+                        len(gyms_rows),
+                        total_members,
+                        len(recovered_ids),
+                        total_lost,
+                        len(checkins_rows),
+                        total_visits,
+                    ],
+                },
+            },
+            "companies": company_cards,
+        }
+    )
+
+
+@app.get("/api/admin/company/<int:gym_id>")
+def api_admin_company_detail(gym_id: int) -> Any:
+    if not is_admin_authenticated():
+        return jsonify({"ok": False, "error": "Unauthorized admin request."}), 401
+    gym = fetch_gym_by_id(gym_id)
+    if not gym:
+        return jsonify({"ok": False, "error": "Business not found."}), 404
+
+    templates = gym_templates(gym)
+    members_rows = fetch_members_for_gym(gym_id)
+    members = [member_to_dict(row, templates) for row in members_rows]
+    with db_connection() as conn:
+        with db_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT member_id, checkin_at, source, purpose, session_time FROM member_checkins WHERE gym_id = %s ORDER BY checkin_at DESC",
+                (gym_id,),
+            )
+            checkins_rows = cursor.fetchall()
+
+    recovered_ids = recovered_member_ids(members_rows, checkins_rows)
+    for item in members:
+        item["is_recovered"] = item["id"] in recovered_ids
+
+    members.sort(key=lambda m: str(m.get("created_at") or ""), reverse=True)
+    return jsonify(
+        {
+            "ok": True,
+            "gym": {
+                "id": int(gym["id"]),
+                "gym_name": gym.get("gym_name"),
+                "owner_name": gym.get("owner_name"),
+                "email": gym.get("email"),
+                "created_at": to_iso(gym.get("created_at")),
+            },
+            "summary": {
+                "members_total": len(members),
+                "members_active": sum(1 for m in members if m["status"] == "Active"),
+                "members_at_risk": sum(1 for m in members if m["status"] == "At Risk"),
+                "members_lost": sum(1 for m in members if m["status"] == "Lost"),
+                "members_recovered": len(recovered_ids),
+                "checkins_total": len(checkins_rows),
+            },
+            "members": members,
+        }
+    )
 
 
 @app.get("/api/dashboard")
